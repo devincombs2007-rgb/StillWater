@@ -33,7 +33,7 @@ import {
   rebirth,
   effectiveRod,
   apparelLuck,
-} from './economy.js?v=6';
+} from './economy.js?v=7';
 import {
   worldConditions,
   startEncounter,
@@ -43,11 +43,11 @@ import {
   resolveFailure,
   reelProfile,
   isReelHit,
-} from './fishing.js?v=6';
-import {createWorld} from './scene.js?v=6';
-import {createAudio} from './audio.js?v=6';
-import {showPreview, stopPreview} from './preview.js?v=6';
-import {fishSvg} from './art.js?v=6';
+} from './fishing.js?v=7';
+import {createWorld} from './scene.js?v=7';
+import {createAudio} from './audio.js?v=7';
+import {showPreview, stopPreview} from './preview.js?v=7';
+import {fishSvg} from './art.js?v=7';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
   esc = v =>

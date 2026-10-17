@@ -1,13 +1,13 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=6';
-import {makeSwimmer, stepSwimmer} from './swimming.js?v=6';
-import {createWater, createEnvironment, addSway} from './environment.js?v=6';
-import {createAngler} from './angler.js?v=6';
-import {createTackle} from './tackle.js?v=6';
-import {surfaceTexture, cloudTexture} from './textures.js?v=6';
-import {createTankSurface} from './surface.js?v=6';
-import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=6';
-import {worldConditions} from './fishing.js?v=6';
+import {createFish, animateFish, disposeFish} from './fish.js?v=7';
+import {makeSwimmer, stepSwimmer} from './swimming.js?v=7';
+import {createWater, createEnvironment, addSway} from './environment.js?v=7';
+import {createAngler} from './angler.js?v=7';
+import {createTackle} from './tackle.js?v=7';
+import {surfaceTexture, cloudTexture} from './textures.js?v=7';
+import {createTankSurface} from './surface.js?v=7';
+import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=7';
+import {worldConditions} from './fishing.js?v=7';
 const TAU = Math.PI * 2;
 // Sky keys across the 20-minute world day: [cycle, zenith, horizon, sun colour].
 const SKY = [

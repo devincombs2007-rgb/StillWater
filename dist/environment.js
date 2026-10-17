@@ -1,7 +1,7 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture} from './textures.js?v=6';
-import {buoyancyPose, createHullMotion, hullTarget} from './surface.js?v=6';
-import {BOATS} from './economy.js?v=6';
+import {surfaceTexture} from './textures.js?v=7';
+import {buoyancyPose, createHullMotion, hullTarget} from './surface.js?v=7';
+import {BOATS} from './economy.js?v=7';
 const TAU = Math.PI * 2;
 // Shoreline banks shared by the scenery, grass and the water shader's shallows.
 const BANKS = [

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stillwater model viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #1d3236; color: #e9e2cf; font: 13px Arial, sans-serif; overflow: hidden; }
+  canvas { display: block; }
+  #label { position: fixed; left: 14px; top: 10px; pointer-events: none; text-shadow: 0 1px 3px #000; }
+</style>
+</head>
+<body>
+<div id="label"></div>
+<script type="module">
+// Development-only turntable for inspecting procedural models up close.
+// Serve the repository root and open tools/viewer.html?m=angler (or fish:koi, tree, house, ...).
+// Several models: ?m=fish:koi,fish:tang&yaw=0.6&pitch=0.2
+import * as T from '../dist/assets/three.module.js';
+import {createAngler} from '../dist/angler.js?v=7';
+import {createFish} from '../dist/fish.js?v=7';
+import {SPECIES, freshState} from '../dist/economy.js?v=7';
+const scenery = await import('../dist/scenery.js?v=7').catch(() => ({}));
+const q = new URLSearchParams(location.search);
+const names = (q.get('m') || 'angler').split(',');
+const renderer = new T.WebGLRenderer({antialias: true});
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = T.SRGBColorSpace;
+renderer.toneMapping = T.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.append(renderer.domElement);
+const scene = new T.Scene();
+scene.background = new T.Color(q.get('bg') || '#36585c');
+scene.add(new T.HemisphereLight('#dceee8', '#2b3d33', 1.8));
+const sun = new T.DirectionalLight('#ffe6c4', 2.4);
+sun.position.set(-4, 7, 6);
+scene.add(sun);
+const rim = new T.DirectionalLight('#9fd0e6', 1.1);
+rim.position.set(5, 3, -6);
+scene.add(rim);
+const root = new T.Group();
+scene.add(root);
+const state = freshState();
+state.character = {name: 'Viewer', skin: Number(q.get('skin') || 1), hair: Number(q.get('hair') || 1), style: Number(q.get('style') || 0)};
+for (const k of ['shirt', 'hat', 'glasses', 'pants', 'shoes']) if (q.get(k)) state.outfit[k] = q.get(k);
+let angler = null;
+let x = 0;
+for (const name of names) {
+  let obj;
+  if (name === 'angler') {
+    angler = createAngler(root, state);
+    obj = angler.group;
+    obj.position.set(0, 0, 0);
+    obj.rotation.y = 0;
+  } else if (name.startsWith('fish:')) {
+    obj = createFish(SPECIES.find(f => f.id === name.slice(5)) || SPECIES[0]);
+    root.add(obj);
+  } else if (scenery[name]) {
+    obj = scenery[name](Number(q.get('seed') || 1));
+    root.add(obj);
+  } else continue;
+  const box = new T.Box3().setFromObject(obj),
+    size = box.getSize(new T.Vector3());
+  obj.position.x += x - box.min.x;
+  x += size.x * 1.15;
+}
+const box = new T.Box3().setFromObject(root),
+  size = box.getSize(new T.Vector3()),
+  center = box.getCenter(new T.Vector3());
+root.position.sub(center);
+const camera = new T.PerspectiveCamera(Number(q.get('fov') || 35), innerWidth / innerHeight, 0.01, 500);
+const radius = Math.max(size.x / camera.aspect, size.y, size.z) / (2 * Math.tan((camera.fov * Math.PI) / 360)) * Number(q.get('zoom') || 1.25);
+const yaw = Number(q.get('yaw') || 0.5),
+  pitch = Number(q.get('pitch') || 0.15);
+camera.position.set(Math.sin(yaw) * Math.cos(pitch) * radius, Math.sin(pitch) * radius, Math.cos(yaw) * Math.cos(pitch) * radius);
+camera.lookAt(0, 0, 0);
+if (q.get('focus') === 'head' && angler) {
+  const h = angler.group.getObjectByName('Head').getWorldPosition(new T.Vector3());
+  camera.position.set(h.x + Math.sin(yaw) * 1.1, h.y + 0.1, h.z + Math.cos(yaw) * 1.1);
+  camera.lookAt(h);
+}
+document.getElementById('label').textContent = names.join(' · ');
+let t = 0;
+function frame() {
+  t += 1 / 60;
+  if (angler) angler.update(1 / 60, t, q.get('mode') || 'idle', Number(q.get('tension') || 0), 0, Number(q.get('charge') || 0));
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+window.__ready = true;
+</script>
+</body>
+</html>
