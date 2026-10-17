@@ -133,6 +133,13 @@ export function createAudio() {
     } else if (type === 'bobber') {
       splash(t, 0.28, 0.45);
       note(390, t, 0.12, 0.025);
+    } else if (type === 'nibble') {
+      // A small hollow 'plip' as the float is tugged under.
+      note(520 + Math.random() * 80, t, 0.09, 0.03, 0.1, 'sine', 0.55);
+      splash(t, 0.07, 0.16);
+    } else if (type === 'thrash') {
+      splash(t, 0.22 + Math.random() * 0.08, 0.38);
+      splash(t + 0.09, 0.12, 0.25);
     } else if (type === 'drip') {
       note(750 + Math.random() * 300, t, 0.075, 0.018, (Math.random() - 0.5) * 0.7, 'sine', 0.45);
       splash(t, 0.025, 0.09);

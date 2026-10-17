@@ -365,7 +365,8 @@ nav svg {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-#new-dot {
+#new-dot,
+#bank-dot {
   position: absolute;
   top: 9px;
   right: 10px;
@@ -1783,6 +1784,12 @@ nav,
   text-align: center;
   font-size: 9px;
   color: #c2b9a5;
+}
+/* Keep the cast button in one place: the let-go link reserves its row even when hidden. */
+#let-go[hidden] {
+  display: block !important;
+  visibility: hidden;
+  pointer-events: none;
 }
 .section-space {
   margin: 24px 0 13px;

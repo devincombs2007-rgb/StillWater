@@ -783,14 +783,14 @@ export const SPECIES = [
 export const RARITIES = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
 export const RARITY_COLORS = ['#b7c7b2', '#7bc9b3', '#b18de3', '#df9fbc', '#f1ca82'];
 export const RODS = [
-  {name: 'Willow rod', cost: 0, luck: 0, power: 1.65},
+  {name: 'Willow rod', cost: 0, luck: 0, power: 1.8},
   {name: 'River reed', cost: 220, luck: 0.25, power: 3.2},
   {name: 'Silver birch', cost: 1600, luck: 0.55, power: 5.5},
   {name: 'Moonweaver', cost: 8500, luck: 0.85, power: 9.5},
   {name: 'Bluewater carbon', cost: 28000, luck: 1.2, power: 16},
 ];
 export const LINES = [
-  {name: 'Basic monofilament', cost: 0, power: 1.8},
+  {name: 'Basic monofilament', cost: 0, power: 1.9},
   {name: 'Braided river line', cost: 180, power: 3.6},
   {name: 'Fluorocarbon leader', cost: 1200, power: 6.3},
   {name: 'Bluewater braid', cost: 7000, power: 11},
@@ -1116,7 +1116,7 @@ export function buy(s, kind, index) {
     if (!APPAREL[index] || s.ownedClothes.includes(APPAREL[index].id)) return false;
     cost = APPAREL[index].cost;
   } else if (kind === 'repair') {
-    if (!s.rodBroken && s.rodCondition >= 99) return false;
+    if (s.rod === 0 || (!s.rodBroken && s.rodCondition >= 99)) return false;
     cost = repairCost(s);
   } else return false;
   if (s.pearls < cost) return false;

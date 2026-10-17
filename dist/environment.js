@@ -3,29 +3,82 @@ import {surfaceTexture} from './textures.js?v=5';
 import {buoyancyPose} from './surface.js?v=5';
 import {BOATS} from './economy.js?v=5';
 const TAU = Math.PI * 2;
+// Shoreline banks shared by the scenery, grass and the water shader's shallows.
+const BANKS = [
+  {cx: -23, cz: -7, w: 27, h: 3.4},
+  {cx: 27, cz: -16, w: 32, h: 4.5},
+];
+export function bankHeight(x, z) {
+  const b = x < 0 ? BANKS[0] : BANKS[1],
+    xx = x - b.cx,
+    zz = z - b.cz,
+    edge = Math.max(0, 1 - Math.pow(Math.abs(xx) / (b.w * 0.5), 2));
+  return -0.25 + Math.pow(edge, 0.7) * (b.h + Math.sin(xx * 0.25 + zz * 0.18) * b.h * 0.22 + Math.sin(zz * 0.47) * 0.2);
+}
+const IMPULSES = 16;
+// Coherent surface model. The GLSL and JS height functions are kept identical so the
+// float, boats and drips ride exactly the waves that are drawn.
 export function createWater(parent) {
   let ocean = 0,
-    swell = 1;
+    swell = 1,
+    wind = 0;
   const events = [];
-  const impulses = Array.from({length: 8}, () => new T.Vector4(0, 0, -100, 0));
+  const impulses = Array.from({length: IMPULSES}, () => new T.Vector4(0, 0, -100, 0));
   const uniforms = {
     time: {value: 0},
     ocean: {value: 0},
     swell: {value: 1},
-    darkness: {value: 0},
+    rain: {value: 0},
     impulses: {value: impulses},
+    skyTop: {value: new T.Color('#4d8fb5')},
+    skyHorizon: {value: new T.Color('#cfe3e0')},
+    sunDir: {value: new T.Vector3(-0.4, 0.7, -0.3).normalize()},
+    sunColor: {value: new T.Color('#ffe2b5')},
+    fogColor: {value: new T.Color('#35575b')},
+    fogDensity: {value: 0.0065},
+    light: {value: 1},
   };
-  const wave = `float height(vec2 p){float a=mix(.048,.22,ocean)*swell;float h=sin(p.x*.45+p.y*.68+time*.9)*a+sin(p.x*.71-p.y*.32+time*.7)*a*.55+sin(p.y*1.8+time*1.1)*.018+sin(p.x*1.3-p.y*.92+time*1.6)*a*.18;for(int i=0;i<8;i++){float age=time-impulses[i].z;float d=length(p-impulses[i].xy);if(age>0.&&age<8.)h+=sin(d*6.-age*8.)*exp(-pow(d-age*2.8,2.)*.7)*exp(-age*.65)*impulses[i].w;}return h;}`;
+  const wave = `float height(vec2 p){float a=mix(.048,.22,ocean)*swell;
+    float h=sin(p.x*.45+p.y*.68+time*.9)*a+sin(p.x*.71-p.y*.32+time*.7)*a*.55+sin(p.y*1.8+time*1.1)*.018
+      +sin(p.x*1.3-p.y*.92+time*1.6)*a*.18+sin(p.x*-.23+p.y*.31+time*.52)*a*.42+sin(p.x*2.1+p.y*1.7+time*2.3)*a*.07;
+    for(int i=0;i<${IMPULSES};i++){float age=time-impulses[i].z;float d=length(p-impulses[i].xy);
+      if(age>0.&&age<8.)h+=sin(d*6.-age*8.)*exp(-pow(d-age*2.8,2.)*.7)*exp(-age*.65)*impulses[i].w;}
+    return h;}`;
+  // Horizontal distance from the nearest freshwater bank edge into open water.
+  const bank = `float shoreDist(vec2 q){vec2 b=q.x<0.?vec2(-23.,13.5):vec2(27.,16.);return abs(q.x-b.x)-b.y;}`;
   const mat = new T.ShaderMaterial({
     uniforms,
     side: T.DoubleSide,
-    vertexShader: `uniform float time;uniform float ocean;uniform float swell;uniform vec4 impulses[8];varying vec3 p;varying vec3 normalW;${wave}void main(){vec3 v=position;v.y=height(v.xz);float e=.08;normalW=normalize(vec3(height(v.xz-vec2(e,0.))-height(v.xz+vec2(e,0.)),2.*e,height(v.xz-vec2(0.,e))-height(v.xz+vec2(0.,e))));p=v;gl_Position=projectionMatrix*modelViewMatrix*vec4(v,1.);}`,
-    fragmentShader: `uniform float time;uniform float ocean;uniform float darkness;varying vec3 p;varying vec3 normalW;void main(){vec3 n=normalize(normalW);vec3 view=normalize(cameraPosition-p);float f=pow(1.-max(0.,dot(view,n)),3.);vec3 deep=mix(vec3(.055,.19,.18),vec3(.035,.18,.25),ocean);vec3 shallow=mix(vec3(.15,.34,.28),vec3(.09,.43,.47),ocean);float bands=.5+.5*sin(p.x*.14+p.z*.18);vec3 color=mix(deep,shallow,bands*.45+.2);color=mix(color,vec3(.42,.57,.56),f*.65);vec3 light=normalize(vec3(-.4,.7,-.3));float sparkle=pow(max(0.,dot(reflect(-light,n),view)),95.);color+=sparkle*vec3(.85,.74,.51)*.75;float fine=sin(p.x*12.+p.z*8.+time)*sin(p.z*9.-time*.6);color+=max(0.,fine-.88)*.06;float foam=ocean*smoothstep(.27,.43,p.y)*.25;color+=foam*vec3(.55,.7,.67);color*=1.-darkness*.65;gl_FragColor=vec4(color,1.);}`,
+    vertexShader: `uniform float time;uniform float ocean;uniform float swell;uniform vec4 impulses[${IMPULSES}];varying vec3 p;varying vec3 normalW;${wave}
+      void main(){vec3 v=position;v.y=height(v.xz);float e=.08;
+        normalW=normalize(vec3(height(v.xz-vec2(e,0.))-height(v.xz+vec2(e,0.)),2.*e,height(v.xz-vec2(0.,e))-height(v.xz+vec2(0.,e))));
+        p=v;gl_Position=projectionMatrix*modelViewMatrix*vec4(v,1.);}`,
+    fragmentShader: `uniform float time;uniform float ocean;uniform float rain;uniform vec3 skyTop;uniform vec3 skyHorizon;uniform vec3 sunDir;uniform vec3 sunColor;
+      uniform vec3 fogColor;uniform float fogDensity;uniform float light;varying vec3 p;varying vec3 normalW;${bank}
+      vec2 ripple(vec2 q,float t){return vec2(sin(q.x*3.1+q.y*1.3+t*1.9)+sin(q.x*5.7-q.y*4.1-t*2.7)*.5+sin(q.y*9.3+q.x*.7+t*3.9)*.25,
+        cos(q.y*2.9-q.x*1.7+t*1.6)+cos(q.y*6.3+q.x*3.9-t*2.3)*.5+cos(q.x*8.7-q.y*1.1+t*4.3)*.25);}
+      void main(){vec3 view=cameraPosition-p;float dist=length(view);view/=dist;
+        float detail=(.035+rain*.05)*(1.-smoothstep(12.,70.,dist));vec2 r=ripple(p.xz,time)*detail;
+        vec3 n=normalize(normalW+vec3(r.x,0.,r.y));
+        float facing=max(0.,dot(view,n));float fres=.03+.97*pow(1.-facing,5.);
+        vec3 refl=reflect(-view,n);float up=clamp(refl.y,0.,1.);
+        vec3 sky=mix(skyHorizon,skyTop,pow(up,.55));
+        vec3 deep=mix(vec3(.03,.13,.13),vec3(.015,.11,.18),ocean),shallow=mix(vec3(.12,.3,.24),vec3(.06,.38,.42),ocean);
+        float sd=shoreDist(p.xz);float zr=p.x<0.?step(-41.,p.z)*step(p.z,27.):step(-53.5,p.z)*step(p.z,21.5);float shore=ocean>.5?0.:(1.-smoothstep(-.2,3.2,sd))*zr;float lap=ocean>.5?0.:(1.-smoothstep(.0,.55,abs(sd-.15+.12*sin(p.z*.9+time*.8))))*zr;
+        vec3 body=mix(deep,shallow,.25+.2*sin(p.x*.14+p.z*.18)+shore*.55);
+        body=mix(body,vec3(.42,.43,.3),shore*shore*.55);
+        vec3 color=mix(body*light,sky,clamp(fres*.85+.08,0.,1.));
+        float spec=pow(max(0.,dot(refl,sunDir)),260.)*1.8+pow(max(0.,dot(refl,sunDir)),40.)*.05;
+        color+=sunColor*spec*smoothstep(-.05,.12,sunDir.y);
+        float crest=ocean*smoothstep(.24,.42,p.y)*.35+lap*(.55+.45*sin(p.z*2.3+time*1.7))*.3;
+        color+=crest*vec3(.75,.82,.8)*max(.35,light);
+        float fog=1.-exp(-fogDensity*fogDensity*dist*dist);gl_FragColor=vec4(mix(color,fogColor,fog),1.);}`,
   });
   const geo = new T.PlaneGeometry(260, 230, 192, 160);
   geo.rotateX(-Math.PI / 2);
   geo.translate(0, 0, -65);
   const mesh = new T.Mesh(geo, mat);
+  mesh.name = 'Lake water';
   parent.add(mesh);
   function height(x, z, t) {
     const a = (ocean ? 0.22 : 0.048) * swell;
@@ -33,7 +86,9 @@ export function createWater(parent) {
       Math.sin(x * 0.45 + z * 0.68 + t * 0.9) * a +
       Math.sin(x * 0.71 - z * 0.32 + t * 0.7) * a * 0.55 +
       Math.sin(z * 1.8 + t * 1.1) * 0.018 +
-      Math.sin(x * 1.3 - z * 0.92 + t * 1.6) * a * 0.18;
+      Math.sin(x * 1.3 - z * 0.92 + t * 1.6) * a * 0.18 +
+      Math.sin(x * -0.23 + z * 0.31 + t * 0.52) * a * 0.42 +
+      Math.sin(x * 2.1 + z * 1.7 + t * 2.3) * a * 0.07;
     for (const e of events) {
       const age = t - e.time,
         d = Math.hypot(x - e.x, z - e.z);
@@ -45,21 +100,23 @@ export function createWater(parent) {
   return {
     mesh,
     height,
+    uniforms,
     impulse(x, z, t, power = 0.22) {
       events.push({x, z, time: t, power});
-      if (events.length > 8) events.shift();
-      for (let i = 0; i < 8; i++) {
+      if (events.length > IMPULSES) events.shift();
+      for (let i = 0; i < IMPULSES; i++) {
         const e = events[i];
         impulses[i].set(e?.x || 0, e?.z || 0, e?.time ?? -100, e?.power || 0);
       }
     },
     update(t, region, c) {
       ocean = region >= 3 ? 1 : 0;
-      swell = c.weather === 'wind' ? 1.45 : 1;
+      wind += ((c.weather === 'wind' ? 1 : 0) - wind) * 0.02;
+      swell = 1 + wind * 0.45;
       uniforms.time.value = t;
       uniforms.ocean.value = ocean;
       uniforms.swell.value = swell;
-      uniforms.darkness.value = c.phase === 'night' ? 0.7 : c.phase === 'dusk' ? 0.22 : 0;
+      uniforms.rain.value += ((c.weather === 'rain' ? 1 : 0) - uniforms.rain.value) * 0.02;
     },
   };
 }
@@ -253,32 +310,66 @@ export function createEnvironment(parent, state, water) {
     for (let j = 0; j < Math.floor(height); j++)
       mesh(box, glowMat, [-35 + i * 3.3, j + 1.7, -77.65 - (i % 3) * 3], [1.5, 0.35, 0.035], salt);
   }
+  // Lofted skiff hull: transom stern, rising sheer to a pointed bow, painted bottom and
+  // a boot stripe at the waterline, with gunwales, floorboards and thwarts inside.
+  const hullStations = 26,
+    hullRing = 16;
+  function hullPoint(u, a) {
+    const beam = u < 0.62 ? 0.78 + 0.22 * Math.sin((u / 0.62) * Math.PI * 0.5) : Math.pow((1 - u) / 0.38, 0.75),
+      sheer = 0.62 + 0.3 * Math.pow(u, 3) - 0.04 * Math.sin(Math.PI * u),
+      keel = -0.45 + 0.22 * Math.pow(u, 4),
+      theta = a * Math.PI,
+      down = Math.pow(Math.sin(theta), 0.55);
+    return [(u - 0.5) * 4.1, sheer - (sheer - keel) * down, Math.cos(theta) * 0.92 * beam];
+  }
   function boat(size = 1, style = 0) {
     const g = new T.Group(),
       pos = [],
-      index = [];
-    for (let i = 0; i <= 24; i++) {
-      const u = i / 24,
-        r = Math.pow(Math.sin(Math.PI * u), 0.55);
-      for (let j = 0; j <= 12; j++) {
-        const a = (j / 12) * Math.PI;
-        pos.push((u - 0.5) * 4, r * -Math.sin(a) * 0.7, r * Math.cos(a) * 0.86);
+      colors = [],
+      index = [],
+      paint = new T.Color(BOATS[style]?.color || '#b4a787'),
+      bottom = new T.Color('#2f4f52'),
+      stripe = new T.Color('#efe9d6');
+    for (let i = 0; i <= hullStations; i++) {
+      for (let j = 0; j <= hullRing; j++) {
+        const p = hullPoint(i / hullStations, j / hullRing);
+        pos.push(...p);
+        const c = p[1] < -0.2 ? bottom : p[1] < -0.12 ? stripe : paint;
+        colors.push(c.r, c.g, c.b);
       }
-      if (i < 24)
-        for (let j = 0; j < 12; j++) {
-          const a = i * 13 + j,
-            b = a + 13;
+      if (i < hullStations)
+        for (let j = 0; j < hullRing; j++) {
+          const a = i * (hullRing + 1) + j,
+            b = a + hullRing + 1;
           index.push(a, b, a + 1, b, b + 1, a + 1);
         }
     }
+    // Transom: close the stern with a flat fan.
+    const centre = pos.length / 3;
+    pos.push(-2.05, 0.1, 0);
+    colors.push(paint.r * 0.85, paint.g * 0.85, paint.b * 0.85);
+    for (let j = 0; j < hullRing; j++) index.push(centre, j, j + 1);
     const geo = new T.BufferGeometry();
     geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
     geo.setIndex(index);
     geo.computeVertexNormals();
-    mesh(geo, mat(BOATS[style]?.color || '#b4a787'), [0, 0, 0], [1, 1, 1], g);
-    mesh(box, mat('#ab9c7b', {map: surfaceTexture('wood')}), [0, 0.025, 0], [3.5, 0.12, 1.48], g);
-    for (const x of [-1, 1])
-      mesh(box, mat('#907f5e', {map: surfaceTexture('wood')}), [x, 0.2, 0], [0.45, 0.2, 1.25], g);
+    const hull = mesh(geo, mat('#ffffff', {vertexColors: true, roughness: 0.55, side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], g);
+    hull.name = 'Hull';
+    const woodLight = mat('#b39f7b', {map: surfaceTexture('wood')}),
+      woodDark = mat('#7e6849', {map: surfaceTexture('wood')});
+    for (const sideSign of [-1, 1]) {
+      const rail = [];
+      for (let i = 0; i <= hullStations; i++) {
+        const p = hullPoint(i / hullStations, sideSign < 0 ? 0 : 1);
+        rail.push(new T.Vector3(p[0], p[1] + 0.02, p[2]));
+      }
+      mesh(new T.TubeGeometry(new T.CatmullRomCurve3(rail), 40, 0.045, 6, false), woodDark, [0, 0, 0], [1, 1, 1], g);
+    }
+    mesh(box, woodLight, [-0.15, 0.22, 0], [3.1, 0.06, 1.25], g);
+    for (let k = -3; k <= 3; k++) mesh(box, woodDark, [-0.15, 0.255, k * 0.17], [3.05, 0.012, 0.02], g);
+    for (const x of [-1.15, 0.95]) mesh(box, woodDark, [x, 0.42, 0], [0.34, 0.07, 1.62 - Math.abs(x) * 0.18], g);
+    mesh(box, woodDark, [1.95, 0.85, 0], [0.12, 0.08, 0.08], g);
     if (style > 0) {
       mesh(box, mat('#e0dccc'), [-1.3, 0.8, 0], [1.1, 1.3, 1.05], g);
       mesh(box, mat('#8fadaf', {metalness: 0.3, roughness: 0.15}), [-1.3, 1.1, 0.54], [0.8, 0.55, 0.03], g);

@@ -61,7 +61,7 @@ export function isReelHit(fight, accuracy) {
 }
 export function setFishPower(fight, rarity) {
   fight.rarity = rarity;
-  fight.power += rarity * 0.8;
+  fight.power += rarity * 0.55;
   return fight;
 }
 export function stepFight(fight, s, dt) {

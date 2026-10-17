@@ -88,6 +88,7 @@ let currentView = 'lake',
   lastSave = lastTick,
   conditions = worldConditions(Date.now(), state.region);
 const MOODS = ['Moonlit', 'Sunset', 'Forest'];
+let freshDiscovery = false;
 let inTitle = true,
   introStarted = false;
 const hasExisting = !!state.character;
@@ -129,6 +130,9 @@ function hud() {
   const rod = effectiveRod(state),
     bait = BAITS[state.bait];
   $('#balance').textContent = fmt(state.pearls);
+  // Small nudges: pearls waiting in the aquarium, and an unread discovery in the field notes.
+  $('#bank-dot').hidden = currentView === 'tank' || state.bank < 5;
+  $('#new-dot').hidden = !freshDiscovery;
   $('#banked').textContent = fmt(state.bank);
   $('#collect').disabled = state.bank < 1;
   $('#tank-count').textContent = `${state.fish.length} / ${TANKS[state.tank].capacity} residents`;
@@ -159,7 +163,6 @@ function hud() {
   $('#quest-reward').textContent = '+' + (q?.reward || 0) + ' pearls';
 }
 function setView(v) {
-  sound.setPlace?.(v === 'tank' ? 'tank' : state.region >= 3 ? 'ocean' : 'lake');
   if (v === 'shop' || v === 'journal') {
     if (stage !== 'idle') return toast('Bring this line in first.');
     openPanel(v);
@@ -167,6 +170,7 @@ function setView(v) {
   }
   if (stage !== 'idle' && v !== currentView) return toast('Your line is still out.');
   currentView = v;
+  sound.setPlace?.(v === 'tank' ? 'tank' : state.region >= 3 ? 'ocean' : 'lake');
   world?.setView(v);
   all('nav button').forEach(b => b.classList.toggle('active', b.dataset.view === v));
   for (const id of ['fishing-controls', 'progress-card', 'choose-location', 'conditions'])
@@ -178,7 +182,14 @@ function setView(v) {
     v === 'lake' ? 'Choose your tackle. Earn your catch.' : 'Growing fish. Growing possibilities.';
   hud();
 }
+// Gentle haptics where the device supports them (Android; iOS Safari ignores this).
+const buzz = pattern => {
+  try {
+    if (state.haptics !== false) navigator.vibrate?.(pattern);
+  } catch {}
+};
 function setStage(s) {
+  if (s === 'bite') buzz(70);
   stage = s;
   if (s !== 'reeling') sound.tension?.(0);
   world?.setCast(s);
@@ -241,6 +252,10 @@ function cast() {
 function fail(reason) {
   resolveFailure(state, reason);
   encounter = null;
+  if (reason.includes('snap')) {
+    world?.loseLine?.();
+    buzz([50, 40, 90]);
+  }
   setStage('idle');
   save();
   hud();
@@ -267,10 +282,16 @@ function action() {
     if (performance.now() > hookDeadline) return fail('missed-hook');
     reelEpoch = performance.now();
     nextTap = 0;
+    world?.setTension?.(encounter.tension);
     setStage('reeling');
     const profile = reelProfile(encounter.rarity);
     $('#sweet-zone').style.left = (0.5 - profile.width / 2) * 100 + '%';
     $('#sweet-zone').style.width = profile.width * 100 + '%';
+    // Say straight away when the hooked fish is beyond this tackle, so letting go is a real choice.
+    $('#fishing-status').textContent =
+      encounter.power > Math.min(effectiveRod(state).power, LINES[state.line].power) * 1.1
+        ? 'Heavy! This fish outmatches your tackle. Let it go or risk a break.'
+        : 'Hooked! Tap while the marker is in the glow.';
     sound.play('reel');
     return;
   }
@@ -300,7 +321,10 @@ function land() {
   state.total++;
   state.activeCast = false;
   recordCatch(state, fish);
-  if (isNew) state.found.push(fish.id);
+  if (isNew) {
+    state.found.push(fish.id);
+    freshDiscovery = true;
+  }
   pending = {...fish, isNew, newRecord};
   state.pending = pending;
   encounter = null;
@@ -376,6 +400,12 @@ for (const type of ['selectstart', 'contextmenu', 'dragstart'])
     if (!e.target.closest('input,textarea,[contenteditable=true]')) e.preventDefault();
   });
 document.addEventListener('keydown', e => {
+  // Shortcuts: 1-4 switch places, C toggles the camera.
+  if (!inTitle && !panelType && !e.repeat && e.target.tagName !== 'INPUT' && !e.metaKey && !e.ctrlKey) {
+    const views = {Digit1: 'lake', Digit2: 'tank', Digit3: 'shop', Digit4: 'journal'};
+    if (views[e.code]) return setView(views[e.code]);
+    if (e.code === 'KeyC' && currentView === 'lake') return $('#camera-mode').onclick();
+  }
   if (
     inTitle ||
     !['Space', 'Enter'].includes(e.code) ||
@@ -494,9 +524,11 @@ function shop() {
     list = row(
       '⌁',
       'Workshop',
-      `Condition ${Math.round(state.rodCondition)}% · ${state.rodBroken ? 'broken rod, basic loaner active' : 'rod in use'} · no repair replaces your upgrades`,
-      repairCost(state),
-      state.pearls >= repairCost(state) && (state.rodBroken || state.rodCondition < 99),
+      state.rod === 0
+        ? 'The willow rod is simple and never wears out · upgraded rods need care'
+        : `Condition ${Math.round(state.rodCondition)}% · ${state.rodBroken ? 'broken rod, basic loaner active' : 'rod in use'} · no repair replaces your upgrades`,
+      state.rod === 0 ? 'No wear' : state.rodBroken || state.rodCondition < 99 ? repairCost(state) : 'Good as new',
+      state.rod > 0 && state.pearls >= repairCost(state) && (state.rodBroken || state.rodCondition < 99),
       'repair:0',
     );
     for (const [kind, table] of [
@@ -700,6 +732,7 @@ function helpView() {
     )}</div><div class="install-note"><strong>Your pocket sanctuary.</strong><p>Add this link to your iPhone home screen in Safari. <span id="offline-state">${offlineReady ? 'Ready for offline play.' : 'Offline preparation runs when supported.'}</span> Progress saves on this device; export a backup before moving devices.</p></div><div class="help-footer"><button class="secondary-button" id="start-playing">Back to the water ↗</button><button class="text-button" id="return-title">Title screen</button><button class="text-button" id="export-save">Export progress</button><label class="text-button">Import progress<input id="import-save" type="file" accept="application/json,.json" hidden></label></div>`;
 }
 function openPanel(type) {
+  if (type === 'journal') freshDiscovery = false;
   const enteringShop = type === 'shop' && panelType !== 'shop';
   if (panelType === 'shop' && type !== 'shop') leaveShop();
   stopPreview();

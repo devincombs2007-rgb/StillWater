@@ -9,6 +9,33 @@ import {createTankSurface} from './surface.js?v=5';
 import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=5';
 import {worldConditions} from './fishing.js?v=5';
 const TAU = Math.PI * 2;
+// Sky keys across the 20-minute world day: [cycle, zenith, horizon, sun colour].
+const SKY = [
+  [0.0, '#1c2a46', '#b98473', '#ffb078'],
+  [0.06, '#3b6585', '#f0b78c', '#ffc890'],
+  [0.15, '#4f8fb6', '#cde2df', '#fff1d6'],
+  [0.46, '#4b88ad', '#d9e5d6', '#ffe7c4'],
+  [0.56, '#3f4f78', '#f09f72', '#ff9f63'],
+  [0.63, '#1f2645', '#6d5a77', '#d47a64'],
+  [0.7, '#081124', '#1c3045', '#8aa0c8'],
+  [0.97, '#081124', '#1d3146', '#8aa0c8'],
+  [1.0, '#1c2a46', '#b98473', '#ffb078'],
+];
+const REGION_TINT = ['#ffffff', '#e9f6e2', '#d9dcff', '#eef8ff', '#fff6ea', '#e6f1ff'];
+const skyA = new T.Color(),
+  skyB = new T.Color();
+function skyAt(cycle, region, out) {
+  let k = 0;
+  while (k < SKY.length - 2 && SKY[k + 1][0] <= cycle) k++;
+  const [c0, ...a] = SKY[k],
+    [c1, ...b] = SKY[k + 1],
+    u = Math.min(1, Math.max(0, (cycle - c0) / (c1 - c0 || 1)));
+  const tint = skyB.set(REGION_TINT[region] || '#ffffff');
+  for (let i = 0; i < 3; i++) out[i].set(a[i]).lerp(skyA.set(b[i]), u).multiply(tint);
+  // Starlit Cove is a deep, dim forest pool whatever the hour.
+  if (region === 2) out[0].multiplyScalar(0.7), out[1].multiplyScalar(0.8);
+  return out;
+}
 export function createWorld(canvas, state, onError) {
   let renderer;
   try {
@@ -37,7 +64,8 @@ export function createWorld(canvas, state, onError) {
     tank = new T.Group();
   scene.add(lake, tank);
   tank.visible = false;
-  scene.add(new T.HemisphereLight('#c6e2de', '#163b3b', 2));
+  const hemi = new T.HemisphereLight('#c6e2de', '#163b3b', 2);
+  scene.add(hemi);
   const sun = new T.DirectionalLight('#ffdfb8', 2.1);
   sun.position.set(-15, 24, 8);
   scene.add(sun);
@@ -58,11 +86,19 @@ export function createWorld(canvas, state, onError) {
   const gradient = new T.ShaderMaterial({
     side: T.BackSide,
     depthWrite: false,
-    uniforms: {top: {value: new T.Color('#102c3c')}, bottom: {value: new T.Color('#8caaa0')}},
+    fog: false,
+    uniforms: {
+      top: {value: new T.Color('#102c3c')},
+      bottom: {value: new T.Color('#8caaa0')},
+      sunDir: {value: new T.Vector3(0, 0.3, -1).normalize()},
+      sunColor: {value: new T.Color('#ffd9a0')},
+      glow: {value: 0},
+    },
     vertexShader:
       'varying vec3 v;void main(){v=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    // Zenith-to-horizon gradient with a warm halo around the sun and haze at the horizon.
     fragmentShader:
-      'varying vec3 v;uniform vec3 top;uniform vec3 bottom;void main(){float h=normalize(v).y;gl_FragColor=vec4(mix(bottom,top,smoothstep(-.08,.65,h)),1.);}',
+      'varying vec3 v;uniform vec3 top;uniform vec3 bottom;uniform vec3 sunDir;uniform vec3 sunColor;uniform float glow;void main(){vec3 d=normalize(v);float h=d.y;vec3 c=mix(bottom,top,smoothstep(-.04,.6,h));float s=max(0.,dot(d,sunDir));c+=sunColor*(pow(s,6.)*.35+pow(s,90.)*.8)*glow;c=mix(c,bottom*1.06,(1.-smoothstep(0.,.12,abs(h)))*.35);c*=1.-smoothstep(-.02,-.3,h)*.45;gl_FragColor=vec4(c,1.);}',
   });
   mesh(new T.SphereGeometry(180, 24, 16), gradient, scene);
   const starPos = [];
@@ -99,8 +135,12 @@ export function createWorld(canvas, state, onError) {
     }
     g.setAttribute('position', new T.Float32BufferAttribute(verts, 3));
     g.computeVertexNormals();
-    return mesh(g, new T.MeshBasicMaterial({color, side: T.DoubleSide}), lake, [x, -0.2, z]);
+    const m = mesh(g, new T.MeshBasicMaterial({color, side: T.DoubleSide}), lake, [x, -0.2, z]);
+    // Distant ranges take their colour from the sky (aerial perspective) instead of glowing at night.
+    ranges.push({mesh: m, base: new T.Color(color), haze: Math.min(0.75, Math.max(0.2, (-z - 50) / 120))});
+    return m;
   }
+  const ranges = [];
   mountain(-70, -135, 140, 50, '#6b8d8c');
   mountain(44, -135, 160, 49, '#6b8d8c');
   mountain(-30, -100, 130, 35, '#4b7375');
@@ -180,9 +220,20 @@ export function createWorld(canvas, state, onError) {
   const surroundings = createEnvironment(lake, state, waterSystem);
   const angler = createAngler(lake, state);
   let soundCallback = () => {};
-  const tackle = createTackle(lake, waterSystem.height, (x, z, t, impact) => {
-    waterSystem.impulse(x, z, t, Math.min(0.32, 0.08 + impact * 0.025));
-    soundCallback('bobber');
+  const tackle = createTackle(lake, waterSystem.height, (x, z, t, impact, kind = 'land') => {
+    const y = waterSystem.height(x, z, t);
+    if (kind === 'nibble') {
+      waterSystem.impulse(x, z, t, 0.06);
+      soundCallback('nibble');
+    } else if (kind === 'thrash') {
+      waterSystem.impulse(x, z, t, Math.min(0.3, 0.06 + impact * 0.03));
+      sprayAt(x, y, z, 10 + Math.round(impact * 2), 0.55 + impact * 0.08);
+      soundCallback('thrash');
+    } else {
+      waterSystem.impulse(x, z, t, Math.min(0.32, 0.08 + impact * 0.025));
+      sprayAt(x, y, z, 16, 0.35 + Math.min(1, impact * 0.08));
+      soundCallback('bobber');
+    }
   });
   const woodA = mat('#6f6954', {map: surfaceTexture('wood')}),
     woodB = mat('#77705a', {map: surfaceTexture('wood')}),
@@ -235,12 +286,6 @@ export function createWorld(canvas, state, onError) {
     leaf.rotation.z = -side * 0.5;
     leaf.userData.freshOnly = true;
   }
-  const floatGroup = new T.Group();
-  floatGroup.position.set(0, 0, -4);
-  lake.add(floatGroup);
-  const bobber = mesh(geoSphere, mat('#eab197'), floatGroup, [0, 0.12, 0], [0.1, 0.16, 0.1]);
-  mesh(geoSphere, mat('#e4e5c3'), floatGroup, [0, 0.02, 0], [0.105, 0.1, 0.105]);
-  floatGroup.visible = false;
   const rippleMeshes = [];
   for (let i = 0; i < 3; i++) {
     const r = mesh(
@@ -259,10 +304,30 @@ export function createWorld(canvas, state, onError) {
     r.visible = false;
     rippleMeshes.push(r);
   }
-  const lineGeo = new T.BufferGeometry().setFromPoints([new T.Vector3(3, 4, 6), new T.Vector3(0, 0.3, -4)]);
-  const line = new T.Line(lineGeo, new T.LineBasicMaterial({color: '#c9d7bf', transparent: true, opacity: 0.45}));
-  lake.add(line);
-  line.visible = false;
+  // Spray thrown up by a landing float or a thrashing fish.
+  const spraySize = 48,
+    sprayGeo = new T.BufferGeometry(),
+    sprayData = new Float32Array(spraySize * 3).fill(-100),
+    sprayVelocity = Array.from({length: spraySize}, () => new T.Vector3()),
+    sprayAge = new Float32Array(spraySize).fill(10);
+  sprayGeo.setAttribute('position', new T.BufferAttribute(sprayData, 3));
+  const spray = new T.Points(
+    sprayGeo,
+    new T.PointsMaterial({color: '#e3f0e6', size: 0.07, transparent: true, opacity: 0.85, depthWrite: false}),
+  );
+  spray.frustumCulled = false;
+  lake.add(spray);
+  let sprayNext = 0;
+  function sprayAt(x, y, z, count, power) {
+    for (let k = 0; k < count; k++) {
+      const i = sprayNext++ % spraySize,
+        angle = Math.random() * TAU,
+        out = (0.4 + Math.random()) * power;
+      sprayAge[i] = 0;
+      sprayData.set([x, y, z], i * 3);
+      sprayVelocity[i].set(Math.cos(angle) * out, (1.2 + Math.random() * 1.6) * power + 0.6, Math.sin(angle) * out);
+    }
+  }
   // An actual three-dimensional glass aquarium, with mesh fish and orbit controls.
   const tankBase = mat('#193c3e', {metalness: 0.3, roughness: 0.4});
   mesh(geoCylinder, tankBase, tank, [0, -0.52, 0], [7, 0.6, 5.5]);
@@ -448,9 +513,11 @@ export function createWorld(canvas, state, onError) {
     hasOrbited = false,
     immersive = false,
     lookY = 2.5,
-    lakeTheta = 0.52,
-    lakePhi = 1.16,
-    lakeRadius = 10.5,
+    lakeTheta = 0.4,
+    lakePhi = 1.2,
+    lakeRadius = 7.2,
+    lookAhead = 5,
+    lineLost = false,
     catchTwist = 0,
     heldFish = null,
     fightTension = 0,
@@ -490,6 +557,8 @@ export function createWorld(canvas, state, onError) {
   lake.add(drips);
   let dripSpawn = 0,
     dripIndex = 0;
+  const skyColors = [new T.Color(), new T.Color(), new T.Color()],
+    lightDir = new T.Vector3(0, 1, 0);
   const raycaster = new T.Raycaster(),
     pointer = new T.Vector2();
   const feedTarget = new T.Vector3(0, 3.7, 0);
@@ -559,14 +628,7 @@ export function createWorld(canvas, state, onError) {
     ];
     if (view === 'lake') {
       const p = palettes[Math.min(2, region)];
-      gradient.uniforms.top.value.set(p.top);
-      gradient.uniforms.bottom.value.set(p.bottom);
-      scene.fog.color.set(p.fog);
       treeMat.color.set(p.tree);
-      sun.color.set(p.light);
-      stars.material.opacity = region === 2 ? 1 : region === 1 ? 0.22 : 0.7;
-      moon.visible = region !== 1;
-      moonHalo.visible = moon.visible;
       creek.visible = region === 1;
       cove.visible = region === 2;
     } else {
@@ -605,7 +667,7 @@ export function createWorld(canvas, state, onError) {
       const p = [...pointers.values()],
         dist = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
       if (pinchDist && dist > 0) {
-        if (view === 'lake') lakeRadius = Math.max(6, Math.min(17, (lakeRadius * pinchDist) / dist));
+        if (view === 'lake') lakeRadius = Math.max(4, Math.min(16, (lakeRadius * pinchDist) / dist));
         else targetRadius = Math.max(10, Math.min(46, (targetRadius * pinchDist) / dist));
       }
       pinchDist = dist;
@@ -665,7 +727,7 @@ export function createWorld(canvas, state, onError) {
     e => {
       e.preventDefault();
       if (view === 'tank') targetRadius = Math.max(10, Math.min(46, targetRadius + e.deltaY * 0.01));
-      else lakeRadius = Math.max(6, Math.min(17, lakeRadius + e.deltaY * 0.006));
+      else lakeRadius = Math.max(4, Math.min(16, lakeRadius + e.deltaY * 0.006));
     },
     {passive: false},
   );
@@ -744,8 +806,10 @@ export function createWorld(canvas, state, onError) {
       const desired = new T.Vector3(),
         target = new T.Vector3();
       if (titleMode) {
-        desired.set(13 + Math.sin(clock * 0.04) * 0.5, 3.4, 18);
-        target.set(0, 1.35, 6.8);
+        // Portrait phones put the boat below the title copy instead of behind the menu.
+        const tall = camera.aspect < 0.8;
+        desired.set(13 + Math.sin(clock * 0.04) * 0.5, tall ? 4.4 : 3.4, tall ? 21 : 18);
+        target.set(tall ? -1.2 : 0, tall ? 3.3 : 1.35, 6.8);
       } else if (isCatch) {
         desired.set(mobile ? 3.9 : 4.5, 3.0, 3.2);
         target.set(mobile ? 0 : 0.6, mobile ? 1.3 : 1.9, 8.35);
@@ -753,30 +817,54 @@ export function createWorld(canvas, state, onError) {
         desired.set(-0.08, 2.45 + angler.group.position.y, 8.48);
         target.set(-0.08, 0.1, -13);
       } else {
-        const radius = lakeRadius;
+        // Orbit around the angler, but aim down the cast so the float stays framed,
+        // including on narrow portrait screens.
+        const out = ['waiting', 'bite', 'reeling'].includes(castState) && tackle.mode !== 'ready',
+          floatAhead = out ? Math.max(0, 8.8 - tackle.end.z) : 0,
+          behind = Math.max(0, Math.cos(lakeTheta));
+        lookAhead += ((out ? Math.min(15, Math.max(5, floatAhead * 0.62)) : 5) - lookAhead) * (1 - Math.exp(-dt * 1.4));
+        const radius = lakeRadius * (camera.aspect < 0.8 ? 1.12 : 1) + (out ? floatAhead * 0.06 : 0);
         desired.set(
           Math.sin(lakeTheta) * Math.sin(lakePhi) * radius,
-          1.6 + Math.cos(lakePhi) * radius,
+          1.6 + angler.group.position.y + Math.cos(lakePhi) * radius,
           8.8 + Math.cos(lakeTheta) * Math.sin(lakePhi) * radius,
         );
-        target.set(0, 1.6, 6.7);
+        target.set(out ? tackle.end.x * 0.35 : 0, 1.3, 8.8 - lookAhead * behind);
       }
       camera.position.lerp(desired, 1 - Math.exp(-dt * 3.6));
       cameraLook.lerp(target, 1 - Math.exp(-dt * 3.6));
       camera.lookAt(cameraLook);
-      tackle.update(dt, clock, isCatch ? angler.hang : angler.tip);
-      floatGroup.visible = false;
-      line.visible = false;
+      if (castState === 'reeling') tackle.fight(fightTension);
+      tackle.update(dt, clock, isCatch ? angler.hang : angler.tip, camera);
+      // Keep the float away from the face while the player designs their angler.
+      if (castState === 'create') tackle.root.visible = false;
       for (const r of rippleMeshes) r.visible = false;
-      if (tackle.mode === 'water' || castState === 'bite') {
+      if (['water', 'hooked'].includes(tackle.mode)) {
+        const hooked = tackle.mode === 'hooked';
         for (let i = 0; i < 3; i++) {
           const r = rippleMeshes[i],
-            u = (clock * 0.6 + i / 3) % 1;
+            u = (clock * (hooked ? 1.3 : castState === 'bite' ? 1.1 : 0.6) + i / 3) % 1;
           r.visible = true;
           r.position.set(tackle.end.x, waterSystem.height(tackle.end.x, tackle.end.z, clock) + 0.025, tackle.end.z);
-          r.scale.setScalar(0.2 + u * 0.7);
-          r.material.opacity = (1 - u) * 0.12;
+          r.scale.setScalar(0.2 + u * (hooked ? 1.3 : 0.7));
+          r.material.opacity = (1 - u) * (hooked ? 0.22 : castState === 'bite' ? 0.2 : 0.12);
         }
+      }
+      if (sprayAge.some(a => a < 1.5)) {
+        for (let i = 0; i < spraySize; i++) {
+          sprayAge[i] += dt;
+          if (sprayAge[i] > 1.5) {
+            sprayData[i * 3 + 1] = -100;
+            continue;
+          }
+          const v = sprayVelocity[i];
+          v.y -= 9.8 * dt;
+          sprayData[i * 3] += v.x * dt;
+          sprayData[i * 3 + 1] += v.y * dt;
+          sprayData[i * 3 + 2] += v.z * dt;
+          if (sprayData[i * 3 + 1] < waterSystem.height(sprayData[i * 3], sprayData[i * 3 + 2], clock)) sprayAge[i] = 10;
+        }
+        sprayGeo.attributes.position.needsUpdate = true;
       }
       if (heldFish) {
         const ext = heldFish.userData.profile.len * 0.52 * heldFish.scale.x;
@@ -827,20 +915,43 @@ export function createWorld(canvas, state, onError) {
       da.needsUpdate = true;
       const night = conditions.phase === 'night';
       const dusk = conditions.phase === 'dusk' || conditions.phase === 'dawn';
-      const top = new T.Color(night ? '#0c1a2c' : dusk ? '#3c5962' : '#6e9fa6'),
-        bottom = new T.Color(night ? '#284552' : dusk ? '#b0a489' : '#b6cbb9');
-      gradient.uniforms.top.value.lerp(top, dt);
-      gradient.uniforms.bottom.value.lerp(bottom, dt);
-      sun.intensity = night ? 0.65 : dusk ? 1.8 : 2.4;
-      const daylightAngle = (conditions.cycle / 0.64) * Math.PI;
-      if (night) sun.position.set(-20, 30, 25);
-      else sun.position.set(Math.cos(daylightAngle) * 50, Math.max(8, Math.sin(daylightAngle) * 45), -40);
-      fill.intensity = night ? 0.55 : 1;
-      stars.material.opacity = night ? 0.95 : 0.06;
+      const cycle = conditions.cycle ?? 0.3,
+        sky = skyAt(cycle, titleMode ? 3 : region, skyColors),
+        blend = 1 - Math.exp(-dt * 2),
+        daylightAngle = (cycle / 0.64) * Math.PI,
+        day = cycle < 0.64,
+        moonAngle = cycle * TAU;
+      gradient.uniforms.top.value.lerp(sky[0], blend);
+      gradient.uniforms.bottom.value.lerp(sky[1], blend);
+      moon.position.set(Math.cos(moonAngle) * 75, 30 + Math.sin(moonAngle) * 20, -100);
+      if (day) lightDir.set(Math.cos(daylightAngle) * 65, Math.sin(daylightAngle) * 55 + 8, -95).normalize();
+      else lightDir.copy(moon.position).normalize();
+      const sunUp = day ? Math.min(1, Math.max(0, Math.sin(daylightAngle) * 2.2)) : 0;
+      gradient.uniforms.sunDir.value.copy(lightDir);
+      gradient.uniforms.sunColor.value.copy(sky[2]);
+      gradient.uniforms.glow.value += ((day ? 0.55 + sunUp * 0.45 : 0.18) - gradient.uniforms.glow.value) * blend;
+      sun.position.copy(lightDir).multiplyScalar(50);
+      sun.color.copy(sky[2]);
+      sun.intensity += ((night ? 0.55 : 0.7 + sunUp * 1.9) - sun.intensity) * blend;
+      hemi.color.copy(sky[0]).lerp(skyA.set('#ffffff'), 0.45);
+      hemi.groundColor.set(region >= 3 ? '#2a4a50' : '#22392f');
+      hemi.intensity += ((night ? 0.85 : dusk ? 1.5 : 1.9) - hemi.intensity) * blend;
+      fill.intensity = night ? 0.45 : 0.9;
+      const rangeLight = night ? 0.3 : dusk ? 0.62 : 0.92;
+      for (const r of ranges)
+        r.mesh.material.color.copy(r.base).multiplyScalar(rangeLight).lerp(gradient.uniforms.bottom.value, r.haze);
+      scene.fog.color.copy(gradient.uniforms.bottom.value).multiplyScalar(0.78);
+      const wu = waterSystem.uniforms;
+      wu.skyTop.value.copy(gradient.uniforms.top.value);
+      wu.skyHorizon.value.copy(gradient.uniforms.bottom.value);
+      wu.sunDir.value.copy(lightDir);
+      wu.sunColor.value.copy(sky[2]).multiplyScalar(day ? 1 : 0.45);
+      wu.fogColor.value.copy(scene.fog.color);
+      wu.fogDensity.value = scene.fog.density;
+      wu.light.value += ((night ? 0.42 : dusk ? 0.78 : 1) - wu.light.value) * blend;
+      stars.material.opacity += ((night ? 0.95 : dusk ? 0.3 : 0.03) * (region === 2 ? 1.2 : 1) - stars.material.opacity) * blend;
       moon.visible = night || dusk;
       moonHalo.visible = moon.visible;
-      const angle = conditions.cycle * TAU;
-      moon.position.set(Math.cos(angle) * 75, 30 + Math.sin(angle) * 20, -100);
       moonHalo.position.copy(moon.position);
       moonHalo.position.z += 0.2;
       fireflies.visible = night || dusk;
@@ -958,10 +1069,16 @@ export function createWorld(canvas, state, onError) {
     setView,
     refreshFish,
     setCast: s => {
+      const previousState = castState;
       castState = s;
       castStart = clock;
+      if (s === 'bite') tackle.bite(true);
+      if (s === 'reeling') tackle.hookSet(1 + fightTension);
       if (s === 'idle') {
-        tackle.reset();
+        // A line that was out is wound back in (or lost) rather than teleporting home.
+        if (['waiting', 'bite', 'reeling'].includes(previousState)) tackle.recall(lineLost);
+        else tackle.reset();
+        lineLost = false;
         fightTension = 0;
         if (heldFish) {
           lake.remove(heldFish);
@@ -1006,6 +1123,9 @@ export function createWorld(canvas, state, onError) {
     },
     setTension: n => {
       fightTension = n;
+    },
+    loseLine: () => {
+      lineLost = true;
     },
     showCatch: fish => {
       if (heldFish) {
