@@ -1,0 +1,5 @@
+Stillwater v1.4.0 — The Bait Shop
+Published source commit: 9225afff8b9809109525f1ab168853fede9816c1
+Prepared for Devin Combs, 17 October 2026.
+Live game: https://stillwater-sanctuary-dev.devincombs.chatgpt.site
+Read CLAUDE_HANDOFF.md first. No hosting credentials or player saves included.
