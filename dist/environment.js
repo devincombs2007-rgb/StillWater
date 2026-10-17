@@ -123,6 +123,35 @@ export function createWater(parent) {
     },
   };
 }
+// Wind sway injected into standard materials; instanced plants sway out of phase.
+const sway = {time: {value: 0}, wind: {value: 0.4}};
+export function addSway(material, amount, base = 0) {
+  material.onBeforeCompile = shader => {
+    shader.uniforms.swayTime = sway.time;
+    shader.uniforms.swayWind = sway.wind;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float swayTime;uniform float swayWind;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          vec3 ip = instanceMatrix[3].xyz;
+        #else
+          vec3 ip = (modelMatrix * vec4(0., 0., 0., 1.)).xyz;
+        #endif
+        float sw = sin(swayTime * 1.7 + ip.x * .35 + ip.z * .27) + .4 * sin(swayTime * 3.1 + ip.z * .6 + ip.x * .2);
+        float lift = max(0., position.y - ${base.toFixed(2)});
+        transformed.x += sw * ${amount.toFixed(3)} * (.35 + swayWind) * lift;
+        transformed.z += sw * ${(amount * 0.4).toFixed(3)} * (.35 + swayWind) * lift;`,
+      );
+  };
+  material.customProgramCacheKey = () => 'sway' + amount + base;
+  return material;
+}
+export function updateSway(t, windy) {
+  sway.time.value = t;
+  sway.wind.value += ((windy ? 1.1 : 0.35) - sway.wind.value) * 0.01;
+}
 export function createEnvironment(parent, state, water) {
   const fresh = new T.Group(),
     salt = new T.Group(),
@@ -179,7 +208,7 @@ export function createEnvironment(parent, state, water) {
     ]);
   }
   const trunks = new T.InstancedMesh(cyl, mat('#6b5b46'), treePositions.length),
-    canopy = new T.InstancedMesh(sphere, mat('#ffffff'), treePositions.length * 9),
+    canopy = new T.InstancedMesh(sphere, addSway(mat('#ffffff'), 0.035, -1), treePositions.length * 9),
     matrix = new T.Object3D();
   fresh.add(trunks, canopy);
   let leaf = 0;
@@ -204,7 +233,7 @@ export function createEnvironment(parent, state, water) {
   }
   const grassGeo = new T.PlaneGeometry(0.09, 0.8, 1, 3);
   grassGeo.translate(0, 0.4, 0);
-  const grass = new T.InstancedMesh(grassGeo, mat('#80916a', {side: T.DoubleSide}), 1800);
+  const grass = new T.InstancedMesh(grassGeo, addSway(mat('#80916a', {side: T.DoubleSide}), 0.16), 1800);
   fresh.add(grass);
   for (let i = 0; i < 1800; i++) {
     const side = i % 2 ? -1 : 1;
@@ -444,6 +473,7 @@ export function createEnvironment(parent, state, water) {
   }
   return {
     update(dt, t, region, c) {
+      updateSway(t, c.weather === 'wind');
       const ocean = region >= 3;
       fresh.visible = !ocean;
       salt.visible = ocean;

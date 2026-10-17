@@ -22,8 +22,10 @@ export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom =
   if (s.decision <= 0) {
     s.decision = 2.2 + (Math.sin(s.phase + time) * 0.5 + 0.5) * 3.2;
     const a = time * 0.17 + s.phase;
+    // The extra per-fish offset matters: golden-angle phases times 1.31 land almost exactly on
+    // multiples of pi, which used to send every fish to the same x and clump the school.
     s.goal = {
-      x: Math.sin(a * 1.31) * 3.35,
+      x: Math.sin(a * 1.31 + s.phase * 0.61) * 3.35,
       y: bottom ? 0.85 + 0.15 * Math.sin(a) : 1.1 + (0.5 + 0.5 * Math.sin(a * 0.7)) * 2.8,
       z: Math.cos(a * 0.83) * 1.6,
     };

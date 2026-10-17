@@ -137,6 +137,9 @@ export function createAudio() {
       // A small hollow 'plip' as the float is tugged under.
       note(520 + Math.random() * 80, t, 0.09, 0.03, 0.1, 'sine', 0.55);
       splash(t, 0.07, 0.16);
+    } else if (type === 'rise') {
+      // Distant: soft and slightly to one side.
+      splash(t, 0.05 + Math.random() * 0.03, 0.32);
     } else if (type === 'thrash') {
       splash(t, 0.22 + Math.random() * 0.08, 0.38);
       splash(t + 0.09, 0.12, 0.25);

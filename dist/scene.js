@@ -1,7 +1,7 @@
 import * as T from './assets/three.module.js';
 import {createFish, animateFish, disposeFish} from './fish.js?v=5';
 import {makeSwimmer, stepSwimmer} from './swimming.js?v=5';
-import {createWater, createEnvironment} from './environment.js?v=5';
+import {createWater, createEnvironment, addSway} from './environment.js?v=5';
 import {createAngler} from './angler.js?v=5';
 import {createTackle} from './tackle.js?v=5';
 import {surfaceTexture, cloudTexture} from './textures.js?v=5';
@@ -288,7 +288,7 @@ export function createWorld(canvas, state, onError) {
   const warm = new T.PointLight('#ffd69c', 6, 9);
   warm.position.set(-1, 0.9, 6.6);
   lake.add(warm);
-  const reedMat = mat('#6c8d73');
+  const reedMat = addSway(mat('#6c8d73'), 0.07);
   for (let i = 0; i < 28; i++) {
     const side = i < 14 ? -1 : 1;
     const x = side * (4 + Math.random() * 5),
@@ -333,6 +333,63 @@ export function createWorld(canvas, state, onError) {
   spray.frustumCulled = false;
   lake.add(spray);
   let sprayNext = 0;
+  // Ambient life: fish rising to the surface and the occasional leap, so the water feels inhabited.
+  let riseWait = 2.5,
+    jumper = null,
+    jumperRegion = -1,
+    jump = null;
+  function lakeLife(dt) {
+    riseWait -= dt;
+    const ocean = region >= 3;
+    if (riseWait <= 0) {
+      riseWait = 3.5 + Math.random() * 7;
+      const x = (Math.random() - 0.5) * (ocean ? 30 : 14),
+        z = -3 - Math.random() * (ocean ? 40 : 24),
+        y = waterSystem.height(x, z, clock);
+      if (Math.random() < 0.3 && !jump) {
+        if (!jumper || jumperRegion !== region) {
+          if (jumper) {
+            lake.remove(jumper);
+            disposeFish(jumper);
+          }
+          const pool = SPECIES.filter(f => (ocean ? f.region >= 3 : f.region < 3) && f.rarity < 2);
+          jumper = createFish(pool[Math.floor(Math.random() * pool.length)]);
+          jumper.scale.multiplyScalar(0.8);
+          jumperRegion = region;
+          lake.add(jumper);
+        }
+        const yaw = Math.random() * TAU,
+          span = 1.2 + Math.random() * 1.4;
+        jump = {t: 0, dur: 0.75 + span * 0.12, x, z, dx: Math.cos(yaw) * span, dz: -Math.sin(yaw) * span, h: 0.5 + span * 0.25, yaw};
+        waterSystem.impulse(x, z, clock, 0.12);
+        sprayAt(x, y, z, 8, 0.45);
+        soundCallback('rise');
+      } else {
+        waterSystem.impulse(x, z, clock, 0.05 + Math.random() * 0.04);
+        sprayAt(x, y, z, 3, 0.2);
+      }
+    }
+    if (jumper) jumper.visible = !!jump;
+    if (jump) {
+      jump.t += dt;
+      const u = jump.t / jump.dur;
+      if (u >= 1) {
+        const ex = jump.x + jump.dx,
+          ez = jump.z + jump.dz;
+        waterSystem.impulse(ex, ez, clock, 0.16);
+        sprayAt(ex, waterSystem.height(ex, ez, clock), ez, 12, 0.55);
+        soundCallback('rise');
+        jump = null;
+      } else {
+        const px = jump.x + jump.dx * u,
+          pz = jump.z + jump.dz * u,
+          arc = 4 * jump.h * u * (1 - u);
+        jumper.position.set(px, waterSystem.height(px, pz, clock) + arc - 0.15, pz);
+        jumper.rotation.set(0, jump.yaw, Math.atan2(4 * jump.h * (1 - 2 * u), Math.hypot(jump.dx, jump.dz)) * 0.8, 'YXZ');
+        animateFish(jumper, clock * 9, 1.2);
+      }
+    }
+  }
   function sprayAt(x, y, z, count, power) {
     for (let k = 0; k < count; k++) {
       const i = sprayNext++ % spraySize,
@@ -392,6 +449,25 @@ export function createWorld(canvas, state, onError) {
   const tankGlow = new T.PointLight('#a0efdc', 20, 14);
   tankGlow.position.set(0, 5.5, 0);
   tank.add(tankGlow);
+  // Soft shafts of light falling through the surface, tinted by the tank mood.
+  const shaftUniforms = {time: {value: 0}, tint: {value: new T.Color('#a0efdc')}};
+  const shaftMat = new T.ShaderMaterial({
+    uniforms: shaftUniforms,
+    transparent: true,
+    depthWrite: false,
+    side: T.DoubleSide,
+    blending: T.AdditiveBlending,
+    vertexShader: 'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    fragmentShader:
+      'varying vec2 v;uniform float time;uniform vec3 tint;void main(){float edge=pow(sin(v.x*3.14159),2.);float fall=pow(v.y,1.6);float ripple=.7+.3*sin(v.x*9.+time*.8)*sin(v.y*4.-time*.5);gl_FragColor=vec4(tint,edge*fall*ripple*.07);}',
+  });
+  const shafts = [];
+  for (let i = 0; i < 6; i++) {
+    const shaft = mesh(new T.PlaneGeometry(0.9 + (i % 3) * 0.35, 4.4), shaftMat, tank, [-3.2 + i * 1.3, 2.55, -0.6 + (i % 2) * 1.1]);
+    shaft.rotation.set(0, 0.5 + i * 0.6, 0.12 - (i % 3) * 0.08);
+    shaft.userData.phase = i * 1.7;
+    shafts.push(shaft);
+  }
   const sandGeo = new T.PlaneGeometry(9, 5, 28, 18);
   const sa = sandGeo.attributes.position;
   for (let i = 0; i < sa.count; i++) sa.setZ(i, Math.sin(sa.getX(i) * 2) * Math.cos(sa.getY(i) * 2) * 0.045);
@@ -656,6 +732,7 @@ export function createWorld(canvas, state, onError) {
       gradient.uniforms.bottom.value.set(m.bottom);
       scene.fog.color.set(m.top);
       tankGlow.color.set(m.glow);
+      shaftUniforms.tint.value.set(m.glow);
       sun.color.set(m.light);
       stars.material.opacity = 0.65;
     }
@@ -800,6 +877,7 @@ export function createWorld(canvas, state, onError) {
     clock += dt;
     streamUniform.time.value = clock;
     causticUniform.time.value = clock;
+    shaftUniforms.time.value = clock;
     pullFlash *= Math.exp(-dt * 6);
     const mobile = innerWidth < 700;
     if (view === 'lake') {
@@ -850,6 +928,7 @@ export function createWorld(canvas, state, onError) {
       camera.position.lerp(desired, 1 - Math.exp(-dt * 3.6));
       cameraLook.lerp(target, 1 - Math.exp(-dt * 3.6));
       camera.lookAt(cameraLook);
+      lakeLife(dt);
       if (castState === 'reeling') tackle.fight(fightTension);
       tackle.update(dt, clock, angler.tip, camera);
       // Keep the float away from the face while the player designs their angler.
@@ -1024,6 +1103,9 @@ export function createWorld(canvas, state, onError) {
         s.mesh.position.set(m.p.x, m.p.y, m.p.z);
         s.mesh.rotation.y = m.yaw;
         s.mesh.rotation.z = m.pitch;
+        // Fish cruising just under the surface dimple it as they pass.
+        if (m.p.y > 3.95 && Math.random() < dt * 1.2)
+          tankSurface.impulse(m.p.x, m.p.z, 0.05 + Math.hypot(m.v.x, m.v.z) * 0.08, 0.22);
         animateFish(s.mesh, m.tail, 0.7 + Math.hypot(m.v.x, m.v.z) * 0.7);
       }
       selectedRing.visible = false;
@@ -1043,6 +1125,7 @@ export function createWorld(canvas, state, onError) {
         pa.needsUpdate = true;
       }
       for (const l of leaves) l.rotation.z = Math.sin(clock * 0.65 + l.id) * 0.008;
+      for (const sh of shafts) sh.rotation.z = 0.12 - (sh.userData.phase % 3) * 0.03 + Math.sin(clock * 0.21 + sh.userData.phase) * 0.05;
       const ba = bubblesGeo.attributes.position;
       for (let i = 0; i < ba.count; i++) {
         let y = ba.getY(i) + dt * (0.14 + (i % 5) * 0.025);
@@ -1197,8 +1280,10 @@ export function createWorld(canvas, state, onError) {
       if (!swimmers.length) return false;
       feedStart = clock;
       feedUntil = clock + 12;
-      tankSurface.impulse(0, 0, 0.45, 0.28);
       feedTarget.set((Math.random() - 0.5) * 2.5, 4.15, Math.random() - 0.5);
+      // Pellets patter onto the surface where they land, not at the tank centre.
+      for (let k = 0; k < 5; k++)
+        tankSurface.impulse(feedTarget.x + (Math.random() - 0.5) * 1.6, feedTarget.z + (Math.random() - 0.5) * 1.3, 0.12, 0.2);
       return true;
     },
     renderer,
