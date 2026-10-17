@@ -797,7 +797,7 @@ export const LINES = [
   {name: 'Deep-sea leader', cost: 22000, power: 18},
 ];
 export const BAITS = [
-  {id: 'bare', name: 'Plain hook', cost: 0, pack: 0, luck: 0, bite: 0.48, color: '#c2c7ae'},
+  {id: 'bare', name: 'Plain hook', cost: 0, pack: 0, luck: 0, bite: 0.56, color: '#c2c7ae'},
   {id: 'worm', name: 'Garden worm lure', cost: 180, pack: 0, luck: 0.25, bite: 0.86, color: '#c6968b'},
   {id: 'glow', name: 'Glow grub lure', cost: 1200, pack: 0, luck: 0.7, bite: 0.9, color: '#c5dfa0'},
   {id: 'silver', name: 'Silver spinner', cost: 6000, pack: 0, luck: 1.2, bite: 0.93, color: '#d7e4d6'},

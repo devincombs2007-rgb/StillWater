@@ -4,7 +4,7 @@ import {makeSwimmer, stepSwimmer} from './swimming.js?v=5';
 import {createWater, createEnvironment} from './environment.js?v=5';
 import {createAngler} from './angler.js?v=5';
 import {createTackle} from './tackle.js?v=5';
-import {surfaceTexture} from './textures.js?v=5';
+import {surfaceTexture, cloudTexture} from './textures.js?v=5';
 import {createTankSurface} from './surface.js?v=5';
 import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=5';
 import {worldConditions} from './fishing.js?v=5';
@@ -115,6 +115,21 @@ export function createWorld(canvas, state, onError) {
     new T.PointsMaterial({color: '#fff0ce', size: 0.27, transparent: true, opacity: 0.7, sizeAttenuation: true}),
   );
   scene.add(stars);
+  // A loose ring of drifting clouds, lit by the same sky palette as everything else.
+  const clouds = [],
+    cloudGeo = new T.PlaneGeometry(1, 0.5);
+  for (let i = 0; i < 11; i++) {
+    const m = new T.Mesh(
+      cloudGeo,
+      new T.MeshBasicMaterial({map: cloudTexture((i % 4) + 1), transparent: true, depthWrite: false, fog: false, opacity: 0.85}),
+    );
+    const size = 38 + ((i * 37) % 30);
+    m.scale.set(size, size, 1);
+    m.userData = {angle: -2.6 + i * 0.48 + Math.sin(i * 3.1) * 0.15, height: 34 + ((i * 13) % 22), dist: 150 + ((i * 17) % 18)};
+    m.renderOrder = -1;
+    lake.add(m);
+    clouds.push(m);
+  }
   const moon = mesh(geoSphere, new T.MeshBasicMaterial({color: '#fff1ce'}), lake, [-23, 29, -88], [3, 3, 3]);
   const moonHalo = mesh(
     new T.CircleGeometry(5.2, 48),
@@ -812,7 +827,8 @@ export function createWorld(canvas, state, onError) {
         target.set(tall ? -1.2 : 0, tall ? 3.3 : 1.35, 6.8);
       } else if (isCatch) {
         desired.set(mobile ? 3.9 : 4.5, 3.0, 3.2);
-        target.set(mobile ? 0 : 0.6, mobile ? 1.3 : 1.9, 8.35);
+        // Desktop keeps the dangling catch left of the stats panel.
+        target.set(mobile ? 0 : -0.7, mobile ? 1.3 : 2.1, mobile ? 8.35 : 7.7);
       } else if (state.cameraMode === 'first') {
         desired.set(-0.08, 2.45 + angler.group.position.y, 8.48);
         target.set(-0.08, 0.1, -13);
@@ -835,7 +851,7 @@ export function createWorld(canvas, state, onError) {
       cameraLook.lerp(target, 1 - Math.exp(-dt * 3.6));
       camera.lookAt(cameraLook);
       if (castState === 'reeling') tackle.fight(fightTension);
-      tackle.update(dt, clock, isCatch ? angler.hang : angler.tip, camera);
+      tackle.update(dt, clock, angler.tip, camera);
       // Keep the float away from the face while the player designs their angler.
       if (castState === 'create') tackle.root.visible = false;
       for (const r of rippleMeshes) r.visible = false;
@@ -955,6 +971,20 @@ export function createWorld(canvas, state, onError) {
       moonHalo.position.copy(moon.position);
       moonHalo.position.z += 0.2;
       fireflies.visible = night || dusk;
+      // Clouds: white by day, sun-washed at dawn/dusk, faint blue silhouettes at night.
+      const cloudTint = skyA.copy(sky[1]).lerp(skyB.set('#ffffff'), night ? 0.05 : dusk ? 0.35 : 0.75);
+      if (dusk) cloudTint.lerp(sky[2], 0.25);
+      if (night) cloudTint.multiplyScalar(0.55);
+      const overcast = conditions.weather === 'rain' ? 1 : conditions.weather === 'mist' ? 0.5 : 0;
+      for (const c of clouds) {
+        const u = c.userData,
+          a = u.angle + clock * 0.0016;
+        c.visible = true;
+        c.position.set(Math.sin(a) * u.dist, u.height, 8 - Math.cos(a) * u.dist);
+        c.lookAt(camera.position.x, u.height * 0.6, camera.position.z);
+        c.material.color.copy(cloudTint).multiplyScalar(1 - overcast * 0.28);
+        c.material.opacity = (night ? 0.4 : 0.95) * (0.8 + overcast * 0.2);
+      }
     } else {
       radius += (targetRadius - radius) * 0.07;
       const centerY = mobile ? 2.5 : 2.2;

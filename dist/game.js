@@ -689,7 +689,7 @@ function journal(residents = false) {
     .map(({f, r}) => {
       const known = !!r || state.found.includes(f.id),
         age = r ? growth(r) : 1;
-      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}">${fishSvg(f, !known)}<h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}</div><div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? '<br>Best ' + (state.records[f.id]?.best || 0).toFixed(1) + ' cm' : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet & nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : ''}</article>`;
+      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}">${fishSvg(f, !known)}<h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}</div><div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? (state.records[f.id]?.best ? '<br>Best ' + state.records[f.id].best.toFixed(1) + ' cm' : '<br>Not yet landed') : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet & nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : ''}</article>`;
     })
     .join('')}</div>`;
 }
@@ -776,7 +776,8 @@ function openPanel(type) {
       SPECIES.find(f => f.id === state.fish.find(x => x.uid === selectedUID).id),
     );
   const first = $('#panel-content button:not(:disabled)') || $('#close-panel');
-  setTimeout(() => first?.focus(), 20);
+  // Focus for keyboard users without scrolling long panels away from their heading.
+  setTimeout(() => first?.focus({preventScroll: true}), 20);
 }
 function leaveShop() {
   sound.play('shop-leave');
@@ -793,7 +794,7 @@ function closePanel(force = false) {
   panelType = '';
   document.body.classList.remove('setup-mode');
   world?.select?.(null);
-  focusBefore?.focus();
+  focusBefore?.focus?.({preventScroll: true});
 }
 function bindPanel() {
   if (panelType === 'extras') $('#extra-back').onclick = () => closePanel();

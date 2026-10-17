@@ -1,6 +1,6 @@
 import * as T from './assets/three.module.js';
 import {surfaceTexture} from './textures.js?v=5';
-import {buoyancyPose} from './surface.js?v=5';
+import {buoyancyPose, createHullMotion, hullTarget} from './surface.js?v=5';
 import {BOATS} from './economy.js?v=5';
 const TAU = Math.PI * 2;
 // Shoreline banks shared by the scenery, grass and the water shader's shallows.
@@ -60,6 +60,9 @@ export function createWater(parent) {
       void main(){vec3 view=cameraPosition-p;float dist=length(view);view/=dist;
         float detail=(.035+rain*.05)*(1.-smoothstep(12.,70.,dist));vec2 r=ripple(p.xz,time)*detail;
         vec3 n=normalize(normalW+vec3(r.x,0.,r.y));
+        if(rain>.02&&dist<40.){vec2 g=p.xz*1.7;vec2 id=floor(g);vec2 c=fract(g)-.5;float h=fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453);
+          c-=(vec2(fract(h*7.13),fract(h*13.7))-.5)*.5;float ph=fract(time*.85+h);float d=length(c),rad=ph*.42;
+          float ring=sin((d-rad)*70.)*smoothstep(.07,0.,abs(d-rad))*(1.-ph);n=normalize(n+vec3(c.x,0.,c.y)/max(d,.02)*ring*rain*.35*(1.-dist/40.));}
         float facing=max(0.,dot(view,n));float fres=.03+.97*pow(1.-facing,5.);
         vec3 refl=reflect(-view,n);float up=clamp(refl.y,0.,1.);
         vec3 sky=mix(skyHorizon,skyTop,pow(up,.55));
@@ -68,7 +71,7 @@ export function createWater(parent) {
         vec3 body=mix(deep,shallow,.25+.2*sin(p.x*.14+p.z*.18)+shore*.55);
         body=mix(body,vec3(.42,.43,.3),shore*shore*.55);
         vec3 color=mix(body*light,sky,clamp(fres*.85+.08,0.,1.));
-        float spec=pow(max(0.,dot(refl,sunDir)),260.)*1.8+pow(max(0.,dot(refl,sunDir)),40.)*.05;
+        float sd0=max(0.,dot(refl,sunDir));float spec=(pow(sd0,mix(260.,520.,ocean))*mix(1.8,1.1,ocean)+pow(sd0,40.)*.05)*(1.-smoothstep(25.,90.,dist)*.5);
         color+=sunColor*spec*smoothstep(-.05,.12,sunDir.y);
         float crest=ocean*smoothstep(.24,.42,p.y)*.35+lap*(.55+.45*sin(p.z*2.3+time*1.7))*.3;
         color+=crest*vec3(.75,.82,.8)*max(.35,light);
@@ -404,6 +407,8 @@ export function createEnvironment(parent, state, water) {
     }
     fleet.push(b);
   }
+  const fleetMotion = [],
+    anchoredMotion = createHullMotion();
   let anchored = boat(1.55, state.boat),
     boatTier = state.boat;
   anchored.position.set(0, 0.35, 8.7);
@@ -462,11 +467,15 @@ export function createEnvironment(parent, state, water) {
         const b = fleet[i];
         const bx = Math.sin(t * 0.015 + i * 1.7) * 42,
           bz = -35 - i * 8;
-        const pose = buoyancyPose(water.height, bx, bz, t, 3, 1.2);
+        const pose = buoyancyPose(water.height, bx, bz, t, 3, 1.2),
+          yaw = Math.cos(t * 0.015 + i * 1.7) > 0 ? 0 : Math.PI;
+        fleetMotion[i] ??= createHullMotion({heave: 2.6, pitch: 3, roll: 2.4});
         b.position.set(bx, pose.y, bz);
-        b.rotation.y = Math.cos(t * 0.015 + i * 1.7) > 0 ? 0 : Math.PI;
-        b.rotation.x += (pose.pitch - b.rotation.x) * (1 - Math.exp(-dt * 2.5));
-        b.rotation.z += (-pose.roll - b.rotation.z) * (1 - Math.exp(-dt * 2.5));
+        const m = fleetMotion[i].step(dt, hullTarget(pose, 0, yaw));
+        b.position.y = m.y;
+        b.rotation.y = yaw;
+        b.rotation.x = m.rx;
+        b.rotation.z = m.rz;
         b.visible = i < 3 || Math.sin(t * 0.02 + i) > 0.3;
       }
       if (boatTier !== state.boat) {
@@ -481,13 +490,13 @@ export function createEnvironment(parent, state, water) {
         salt.add(anchored);
         boatTier = state.boat;
       }
-      const hull = buoyancyPose(water.height, 0, 8.7, t, 5.6, 2.4),
-        settle = 1 - Math.exp(-dt * 2.6);
+      const hull = buoyancyPose(water.height, 0, 8.7, t, 5.6, 2.4);
       anchored.position.x = 0;
       anchored.position.z = 8.7;
-      anchored.position.y += (0.28 + hull.y - anchored.position.y) * settle;
-      anchored.rotation.x += (hull.pitch - anchored.rotation.x) * settle;
-      anchored.rotation.z += (-hull.roll - anchored.rotation.z) * settle;
+      const motion = anchoredMotion.step(dt, hullTarget(hull, 0.28));
+      anchored.position.y = motion.y;
+      anchored.rotation.x = motion.rx;
+      anchored.rotation.z = motion.rz;
       rain.visible = c.weather === 'rain';
       if (rain.visible) {
         const a = rainGeo.attributes.position;

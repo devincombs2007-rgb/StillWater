@@ -67,3 +67,44 @@ export function buoyancyPose(waterHeight, x, z, time, length = 5, width = 2) {
     starboard = waterHeight(x, z + width / 2, time);
   return {y: h, pitch: Math.atan2(starboard - port, width), roll: Math.atan2(fore - aft, length)};
 }
+// Damped second-order hull response. Each axis is a mass-spring-damper driven toward
+// the water's local height and slope, so hulls lag, overshoot slightly and settle like a
+// body with inertia instead of lerping. Signs follow three.js Euler rotations:
+// rotation.x > 0 lowers +z (starboard), rotation.z > 0 raises +x (bow).
+export function createHullMotion({heave = 2.2, pitch = 2.6, roll = 1.9, damping = 0.42} = {}) {
+  const axes = {
+    y: {x: 0, v: 0, w: heave},
+    rx: {x: 0, v: 0, w: pitch},
+    rz: {x: 0, v: 0, w: roll},
+  };
+  let started = false;
+  function step(dt, target) {
+    if (!started) {
+      for (const k in axes) axes[k].x = target[k];
+      started = true;
+    }
+    // Sub-step so long frames stay stable.
+    let left = Math.min(0.1, Math.max(0, dt));
+    while (left > 1e-6) {
+      const h = Math.min(1 / 60, left);
+      left -= h;
+      for (const k in axes) {
+        const a = axes[k],
+          acc = a.w * a.w * (target[k] - a.x) - 2 * damping * a.w * a.v;
+        a.v += acc * h;
+        a.x += a.v * h;
+      }
+    }
+    return {y: axes.y.x, rx: axes.rx.x, rz: axes.rz.x};
+  }
+  // An external push (wake, a fish tugging the line) adds angular or vertical velocity.
+  function kick(axis, amount) {
+    if (axes[axis]) axes[axis].v += amount;
+  }
+  return {step, kick, axes};
+}
+// Converts a sampled water pose into hull targets for a boat with the given yaw (0 or PI).
+export function hullTarget(pose, draft, yaw = 0) {
+  const flip = Math.cos(yaw) < 0 ? -1 : 1;
+  return {y: pose.y + draft, rx: -pose.pitch, rz: pose.roll * flip};
+}

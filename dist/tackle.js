@@ -54,7 +54,7 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
   const float = new T.Group();
   float.name = 'Bobber';
   // Slightly oversized so the strike stays readable twenty metres out on a phone.
-  float.scale.setScalar(1.6);
+  float.scale.setScalar(1);
   root.add(float);
   const glossy = (color, extra = {}) =>
     new T.MeshPhysicalMaterial({color, roughness: 0.28, clearcoat: 0.8, clearcoatRoughness: 0.2, ...extra});
@@ -158,7 +158,9 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     velocity.y += 1.2;
   }
   // Waterline sits a little above the bobber's equator, like a real float.
-  const restY = 0.025;
+  const restY = 0.025,
+    HANG = 0.9,
+    floatBody = [upper, lower, stripe, top, cap, eye];
   function update(dt, time, tip, camera) {
     dt = Math.min(0.035, dt);
     anchor.copy(tip);
@@ -172,10 +174,10 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
       ropeLength = Math.max(ropeLength, anchor.distanceTo(end) * 1.045);
       spin += dt * 9;
     } else if (mode === 'retrieve') {
-      tmp.copy(anchor).add(new T.Vector3(0.15, -0.65, 0));
+      tmp.copy(anchor).add(new T.Vector3(0.12, -HANG, 0));
       velocity.add(tmp.sub(end).multiplyScalar(35 * dt));
       velocity.multiplyScalar(Math.exp(-7 * dt));
-      ropeLength = 0.65;
+      ropeLength = HANG;
     } else if (mode === 'recall') {
       // Wind the float home: it skims the surface, then lifts to the rod tip.
       tmp.copy(anchor).add(new T.Vector3(0, -0.65, 0));
@@ -189,7 +191,7 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
       velocity.y -= 9.81 * dt;
       velocity.x += Math.sin(time * 1.2) * 0.06 * dt;
       velocity.multiplyScalar(Math.exp(-0.6 * dt));
-      ropeLength += (0.65 - ropeLength) * Math.min(1, dt * 5);
+      ropeLength += ((mode === 'caught' ? HANG : 0.65) - ropeLength) * Math.min(1, dt * 5);
     } else {
       // Floating: buoyancy spring toward a waterline that bites and fish can pull under.
       let sink = 0;
@@ -306,7 +308,11 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     hook.position.y = held ? -0.27 : -0.64;
     shank.position.y = held ? -0.23 : -0.6;
     bait.visible = !held;
+    // A landed fish hangs straight off the hook; the float slides out of the way.
+    for (const part of floatBody) part.visible = !held;
     float.position.copy(end);
+    const out = ['flight', 'water', 'hooked', 'recall'].includes(mode) && end.distanceTo(anchor) > 3;
+    float.scale.setScalar(float.scale.x + ((out ? 1.6 : 1) - float.scale.x) * Math.min(1, dt * 4));
     // The float leans toward the line under load and wobbles in flight.
     tmp.copy(anchor).sub(end);
     const lean = Math.min(0.9, tension * 1.4 + (mode === 'hooked' ? fishPull * 0.5 : 0));
@@ -344,9 +350,9 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     },
     hang() {
       mode = 'caught';
-      ropeLength = Math.max(0.65, anchor.distanceTo(end));
+      ropeLength = Math.max(HANG, anchor.distanceTo(end));
       if (anchor.distanceTo(end) > 3) {
-        end.copy(anchor).add(new T.Vector3(0.2, -0.65, 0));
+        end.copy(anchor).add(new T.Vector3(0.2, -HANG, 0));
         velocity.set(0.4, 0, 0.2);
         reset();
       }
