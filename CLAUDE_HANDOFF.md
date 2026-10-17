@@ -34,9 +34,20 @@ Physics: spring-buoyant float with waterline, nibbles and bite plunges; hooked f
 
 QoL: tap anywhere on the scene to hook/reel; 1–4 and C shortcuts; aquarium pearls dot; optional vibration (Options; iOS Safari ignores it); larger “Let it go” target; plain hook bite 48% → 56%; journal says “Not yet landed”; Battery mode skips heavy water detail.
 
-Sources were run through Prettier once (separate commit, no behaviour change) so they are readable; tests were adjusted only for formatting and for the new ribbon line. Save key and payload version 3 are unchanged (new optional `haptics` field). Module URLs, build marker and worker cache are now **v6**.
+Sources were run through Prettier once (separate commit, no behaviour change) so they are readable; tests were adjusted only for formatting and for the new ribbon line. Save key and payload version 3 are unchanged (new optional `haptics` field). Module URLs, build marker and worker cache are now **v7** (after the model pass).
 
 Verified: all eight test files pass; end-to-end play in headless Chromium/SwiftShader at 390×844 and 1280×800 including lake/creek/cove/ocean regions and dawn/day/dusk/night, catch, aquarium, shop, journal and options with no console errors. **Not verified:** real iPhone Safari, GPU frame rate/thermals with the heavier water shader, touch feel, audio on hardware.
+
+## v1.5 model pass — every 3D model rebuilt
+
+All models are still procedural code (no downloaded assets), built from a small toolkit in `dist/models.js` (lathe, noise displacement, tubes, vertex paint, geometry merge). Scenery factories live in `dist/scenery.js`. `tools/viewer.html` is a dev-only turntable: serve the repo root and open e.g. `tools/viewer.html?m=angler&focus=head&style=1&hat=hat2`, `?m=fish:koi,fish:marlin`, or `?m=cottageModel,car,palm,gull&seed=3`.
+
+- **Angler:** shaped torso, pelvis and tapered legs; boots with soles and laces; belt, collar, pocket and buttons; jacket and long-coat layers for apparel tiers; sculpted head with ears, irises, blinking lids, brows, nose and smile; three real hairstyles; riverside cap and mariner bucket hat; framed sunglasses; shoulder/elbow joints and curled fingers; the head glances at the float. Rod: tapered blank, wrapped guides, cork grip, reel seat and a spinning reel whose crank follows the reeling hand.
+- **Fish:** per-shape anatomy (narrow peduncle, blunt heads, mouth, gill cover, lateral line), tails by type (forked, crescent, rounded, veil, double, lyre, fan), fins rising from the body outline with rays, hinged pectoral/pelvic fins, adipose fins, eye sockets, lionfish spines; barbels only on koi/catfish/arowana. Static details are one merged mesh per fish.
+- **Scenery:** instanced broadleaf and conifer trees on the real terrain; mossy boulders; cottages with porches, shutters, chimneys and fences; rounded cars with spinning wheels; walkers with swinging limbs; curved palms with leaflet fronds; harbour blocks with window bays and rooftop tanks; flapping gulls; plank dock with piles, cleat and rope; hurricane lantern; cattails; cove crystal clusters; fractal mountain ridges; billowing sails.
+- **Aquarium:** cabinet stand, metal edge trim, back-sloped substrate with gravel, stones and driftwood, swaying ribbon grass, sword plants, moss balls, mossy arch, glass lanterns.
+
+Measured in headless Chromium at 390×844 (instrumented WebGL calls): lake ≈198 draw calls / 276k triangles per frame (v1.5 before the pass: 184 / 299k); aquarium with 14 fish ≈277 / 147k (was 389 / 107k). Real iPhone frame rate and thermals are still unmeasured.
 
 ## Vision and tone
 
@@ -62,7 +73,7 @@ The stationary angler fishes by tapping/holding. There is no character locomotio
 - Procedural sounds for cast swish, actual bobber water contact, bite/reel/tension, snapping/escape, splash/feed, pearls, UI, and dripping held fish. Occasional freshwater daytime birds/traffic or coastal gulls/horns. Sound pauses in the background and can be muted; Options includes volume presets. Do not claim the sounds have been listened to on hardware.
 - Startup: black screen asks for a tap to unlock mobile audio, then ocean ambience, “Created by ChatGPT and Devin Combs,” and a fade to a 3D shore camera looking toward a fisherman/boat. Title menu: Stillwater, Continue, Start new, Options, Extra. Start new asks before replacing an existing character save. Options includes export/import, audio/volume and graphics. Extra credits and future-mode notes. Help can return to the title.
 - Generated neutral detail texture maps on rod/grip, clothing, dock and boat wood; added line guides and bobber trim. This is targeted material improvement, **not completion of the request for high-quality art on every model**.
-- iPhone standalone/PWA metadata, icons, safe areas, offline shell, input-exempt selection/callout suppression and pointer-based casting. Versioned module URLs and worker cache currently **v6** (v1.5). Do not reuse v6 URLs for a later code change: update URLs, build marker, cache version, and offline tests together.
+- iPhone standalone/PWA metadata, icons, safe areas, offline shell, input-exempt selection/callout suppression and pointer-based casting. Versioned module URLs and worker cache currently **v7** (v1.5 models). Do not reuse v7 URLs for a later code change: update URLs, build marker, cache version, and offline tests together.
 
 ## Source map
 
@@ -76,7 +87,10 @@ The stationary angler fishes by tapping/holding. There is no character locomotio
 | `dist/tackle.js` | Rope, bobber/hook/bait, flight, surface impact, retrieval and hanging |
 | `dist/environment.js` | Water shader/height model, scenery, ambient actors, boats, shore title scene |
 | `dist/surface.js` | Pure damped tank wave solver and hull sampling helper |
-| `dist/textures.js` | Locally generated deterministic DataTexture material maps |
+| `dist/textures.js` | Locally generated deterministic DataTexture material maps and cloud sprites |
+| `dist/models.js` | Procedural modelling toolkit (lathe, displace, tube, paint, merge) |
+| `dist/scenery.js` | Trees, rocks, cottages, cars, walkers, palms, harbour blocks, gulls, dock, lantern, reeds |
+| `tools/viewer.html` | Dev-only model turntable (not deployed) |
 | `dist/fish.js`, `dist/swimming.js` | Fish mesh construction and limited-acceleration motion |
 | `dist/audio.js` | Web Audio synthesis, device voice, ambience scheduling, mute/pause |
 | `dist/preview.js`, `dist/art.js` | Resident rotatable model preview and illustrative fallback |
@@ -101,7 +115,7 @@ Eight Node test files pass: audio scheduling/gating/voice fallback; economy/migr
 ## What to do next, in order
 
 1. **Real iPhone Safari and installed-app QA.** Confirm first-tap audio/credits, title framing, Continue/new-game confirmation/import, shop bell/voice exactly once, mute/volume, no long-press selection, charging pose syncing, all rarity windows, catch and portrait stats not overlapping, touch orbit, actual aquarium waves/drop/scatter, GPU stability, battery/thermal behavior, background/resume and cache update. Also test desktop and reduced motion. Fix observed problems before expanding scope.
-2. **Art/animation polish.** Devin explicitly requested high-quality models and textures everywhere. Current characters/fish/boats/trees are procedural stylized meshes, and the shopkeeper is an SVG portrait in a panel, not a fully modeled 3D shop. Improve close-range silhouettes, face/hands, fish species anatomy/markings, rod/reel crank/line guides, bobber wetness, shoreline detail and shop interior. Preserve readable calm cartoon styling. Add a proper rig/IK where it materially improves believable reeling. Do not claim all models are production-quality yet.
+2. **Art/animation polish.** Devin explicitly requested high-quality models and textures everywhere. Current characters/fish/boats/trees are procedural stylized meshes, and the shopkeeper is an SVG portrait in a panel, not a fully modeled 3D shop. v1.5 rebuilt every 3D model procedurally (see above); remaining art gaps are the 2D shopkeeper portrait (no 3D shop interior), bobber wetness, per-species fish markings beyond colour patterns, and hand-authored textures. Preserve readable calm cartoon styling. Add a proper rig/IK where it materially improves believable reeling. Do not claim all models are production-quality yet.
 3. **Water/physics polish.** Current water is lightweight height-field/shader simulation, not volumetric fluid, displacement by every fish/hull, fluid pressure, true refractive caustics, shoreline collision solver, or physically complete buoyancy. Improve wind coherence, wakes, foam/shore interaction, surface impact timing, fish-water interaction and waterline/contact. Watch mobile performance. Hull response currently samples local slopes and interpolates motion; it is not a rigid-body simulation with torque/mass/inertia.
 4. **Sound direction.** Audition/rebalance on actual hardware; refine ASMR layers and spatial attenuation, gulls/horns/traffic timing, repeated UI sounds, and drip synchronization. Consider bundled licensed/original recorded keeper vocals for consistency; device speech synthesis varies by OS and installed voices. No remote AI voice or paid service is wired up.
 5. **Economy playtesting.** Confirm meaningful saving decisions without excessive early grind; permanent lure prices replace the old small consumable packs. Rarity/gear failures should be legible and fair. No guaranteed catches/rare pity has been added.

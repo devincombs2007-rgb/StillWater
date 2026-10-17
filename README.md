@@ -36,7 +36,7 @@ These checks still do not verify iPhone Safari, real GPU performance or thermals
 
 ## Credits
 
-Three.js is copyright 2010–2025 Three.js Authors, MIT license, bundled in `dist/assets`. Fish, angler, scenery, aquarium, shaders, animation, and audio are procedural code created for this game.
+Three.js is copyright 2010–2025 Three.js Authors, MIT license, bundled in `dist/assets`. Fish, angler, scenery, aquarium, shaders, animation, and audio are procedural code created for this game: every model is generated at load time by `dist/models.js` and `dist/scenery.js`, with no downloaded meshes. `tools/viewer.html` (served from the repository root) shows any model on a turntable for art review.
 
 ## Continuation
 

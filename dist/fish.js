@@ -1,7 +1,7 @@
 import * as T from './assets/three.module.js';
+import {merge, paint} from './models.js?v=7';
 const PI = Math.PI,
   TAU = PI * 2;
-const eyeGeo = new T.SphereGeometry(1, 12, 9);
 const white = new T.Color('#f2dfb5'),
   dark = new T.Color('#163b43');
 // Per body plan: size (h height, w width, len, tail span), the narrow caudal peduncle,
@@ -245,7 +245,8 @@ export function createFish(f) {
 
   // Paired fins: pectorals behind the gill cover, pelvics under the belly. Built around
   // their root so they can flap.
-  const pectorals = [];
+  const pectorals = [],
+    details = [];
   const pecU = 0.73,
     pelU = 0.56;
   for (const side of [-1, 1]) {
@@ -276,24 +277,18 @@ export function createFish(f) {
       eyeZ = widthAt(eyeU) * Math.sqrt(1 - 0.09) + 0.004,
       eyeX = xAt(eyeU),
       er = 0.05 * Math.min(1.2, Math.max(0.8, p.h / 0.3));
-    const socket = new T.Mesh(eyeGeo, new T.MeshStandardMaterial({color: new T.Color(f.color).multiplyScalar(0.8), roughness: 0.5}));
-    socket.position.set(eyeX, eyeY, side * (eyeZ - 0.006));
-    socket.scale.set(er * 1.25, er * 1.25, er * 0.45);
-    g.add(socket);
-    const eye = new T.Mesh(eyeGeo, new T.MeshStandardMaterial({color: '#0d1719', roughness: 0.08, metalness: 0.3}));
-    eye.position.set(eyeX, eyeY, side * eyeZ);
-    eye.scale.set(er, er * 1.05, er * 0.5);
-    g.add(eye);
-    const iris = new T.Mesh(
-      new T.TorusGeometry(er * 0.82, er * 0.2, 6, 20),
-      new T.MeshStandardMaterial({color: f.rarity > 2 ? '#e9cf8f' : '#c5b783', side: T.DoubleSide, metalness: 0.45, roughness: 0.3}),
-    );
-    iris.position.set(eyeX, eyeY, side * (eyeZ + er * 0.32));
-    g.add(iris);
-    const glint = new T.Mesh(eyeGeo, new T.MeshBasicMaterial({color: '#f8f6dc'}));
-    glint.scale.set(er * 0.24, er * 0.26, er * 0.12);
-    glint.position.set(eyeX + er * 0.3, eyeY + er * 0.35, side * (eyeZ + er * 0.45));
-    g.add(glint);
+    const sphereAt = (pos, scale, color) => {
+      const geo = new T.SphereGeometry(1, 12, 9);
+      geo.scale(...scale);
+      geo.translate(...pos);
+      details.push(paint(geo, color));
+    };
+    sphereAt([eyeX, eyeY, side * (eyeZ - 0.006)], [er * 1.25, er * 1.25, er * 0.45], new T.Color(f.color).multiplyScalar(0.8));
+    sphereAt([eyeX, eyeY, side * eyeZ], [er, er * 1.05, er * 0.5], '#0d1719');
+    const iris = new T.TorusGeometry(er * 0.82, er * 0.2, 6, 20);
+    iris.translate(eyeX, eyeY, side * (eyeZ + er * 0.32));
+    details.push(paint(iris, f.rarity > 2 ? '#e9cf8f' : '#c5b783'));
+    sphereAt([eyeX + er * 0.3, eyeY + er * 0.35, side * (eyeZ + er * 0.45)], [er * 0.24, er * 0.26, er * 0.12], '#fbfaf0');
 
     // Gill cover edge following the body surface.
     const gu = 0.77,
@@ -303,17 +298,14 @@ export function createFish(f) {
         y = midline(p, gu) + Math.sin(a) * p.h * thickness(p, gu) * (a > 0 ? p.top : p.bot) * 0.85;
       points.push(new T.Vector3(xAt(gu) - Math.cos(a) * 0.05, y, side * (Math.cos(a) * widthAt(gu) * 0.97 + 0.004)));
     }
-    g.add(new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(points), 14, 0.006, 4, false), new T.MeshStandardMaterial({color: f.fin, roughness: 0.55})));
+    details.push(paint(new T.TubeGeometry(new T.CatmullRomCurve3(points), 14, 0.006, 4, false), f.fin));
   }
   // Mouth: lips at the snout, a little below the midline.
-  const lips = new T.Mesh(
-    new T.TorusGeometry(0.03 * Math.min(1.3, p.h / 0.28), 0.011, 6, 16),
-    new T.MeshStandardMaterial({color: new T.Color(f.fin).multiplyScalar(0.7), roughness: 0.5}),
-  );
-  lips.position.set(headX - 0.012, midline(p, 0.99) - p.h * 0.04, 0);
-  lips.rotation.y = PI / 2;
-  lips.scale.set(1, 0.7, 1);
-  g.add(lips);
+  const lips = new T.TorusGeometry(0.03 * Math.min(1.3, p.h / 0.28), 0.011, 6, 16);
+  lips.scale(1, 0.7, 1);
+  lips.rotateY(PI / 2);
+  lips.translate(headX - 0.012, midline(p, 0.99) - p.h * 0.04, 0);
+  details.push(paint(lips, new T.Color(f.fin).multiplyScalar(0.7)));
   // Barbels: koi have a short pair, catfish four long ones, arowana a chin pair.
   const feelers = p.barbels || 0;
   for (let j = 0; j < feelers; j++) {
@@ -328,14 +320,18 @@ export function createFish(f) {
       new T.Vector3(x0 + len * (0.25 + forward * 0.4) - len * 0.2, y0 - len * 0.4, side * (0.06 + len * 0.3)),
       new T.Vector3(x0 + len * forward * 0.6 - len * 0.5, y0 - len * 0.75, side * (0.08 + len * 0.45)),
     ]);
-    g.add(new T.Mesh(new T.TubeGeometry(curve, 12, long ? 0.009 : 0.007, 5, false), new T.MeshStandardMaterial({color: f.fin, roughness: 0.5})));
+    details.push(paint(new T.TubeGeometry(curve, 12, long ? 0.009 : 0.007, 5, false), f.fin));
   }
   if (['marlin', 'sailfish'].includes(f.id)) {
-    const bill = new T.Mesh(new T.ConeGeometry(0.028, 0.7, 10), new T.MeshStandardMaterial({color: f.fin, roughness: 0.4}));
-    bill.rotation.z = -Math.PI / 2;
-    bill.position.set(headX + 0.32, midline(p, 1) + 0.01, 0);
-    g.add(bill);
+    const bill = new T.ConeGeometry(0.028, 0.7, 10);
+    bill.rotateZ(-Math.PI / 2);
+    bill.translate(headX + 0.32, midline(p, 1) + 0.01, 0);
+    details.push(paint(bill, f.fin));
   }
+  // Eyes, gill covers, lips, barbels and bill never deform, so they share one draw call.
+  const detailMesh = new T.Mesh(merge(details), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.3, metalness: 0.2}));
+  detailMesh.name = 'Fish details';
+  g.add(detailMesh);
   g.scale.setScalar(0.59 + (f.size - 1) * 0.16);
   g.userData = {tail, pectorals, fins, body, bodyBase: bodyGeo.attributes.position.array.slice(), profile: p, uid: null};
   return g;
@@ -371,7 +367,7 @@ export function disposeFish(g) {
     mats = new Set();
   g.traverse(o => {
     if (o.isMesh) {
-      if (o.geometry !== eyeGeo) geos.add(o.geometry);
+      geos.add(o.geometry);
       mats.add(o.material);
     }
   });
