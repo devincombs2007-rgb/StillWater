@@ -317,6 +317,12 @@ export function createAngler(parent, state) {
         1.43 + pose * 0.52 + Math.sin(reelPhase) * 0.075 + firstBlend * 0.67,
         0.47 + Math.cos(reelPhase) * 0.08 + firstBlend * 0.53,
       );
+    // Shopkeeper poses (used for Milo): hands resting on the counter, or a friendly wave.
+    if (mode === 'keeper' || mode === 'wave') {
+      left.set(0.27, 1.3 + breathe, 0.42);
+      right.set(-0.27, 1.3 + breathe, 0.42);
+      if (mode === 'wave') right.set(-0.42, 2.28 + Math.sin(t * 9) * 0.03, 0.18 + Math.sin(t * 9) * 0.09);
+    }
     left.y += chargeBlend * 0.26;
     left.z -= chargeBlend * 0.7;
     right.y += chargeBlend * 0.18;
@@ -381,7 +387,7 @@ export function createAngler(parent, state) {
     segment(crankArm, reelSide, knobAt);
     knob.position.copy(knobAt);
     // Head: glance down at the float while it is out, look up at a landed fish, and blink.
-    const lookTarget = held ? -0.35 : ['waiting', 'bite', 'reeling'].includes(mode) ? 0.22 : 0.05;
+    const lookTarget = held ? -0.35 : ['waiting', 'bite', 'reeling'].includes(mode) ? 0.22 : mode === 'wave' ? -0.05 : 0.05;
     look += (lookTarget - look) * (1 - Math.exp(-dt * 3));
     head.rotation.set(look + Math.sin(t * 0.6) * 0.02, Math.sin(t * 0.37) * 0.05, Math.sin(t * 0.5) * 0.015);
     blinkAt -= dt;
@@ -409,6 +415,8 @@ export function createAngler(parent, state) {
     group: g,
     update,
     refresh,
+    materials: {skin, hair: hairMat, cloth, pants, shoes, hat: hatMat},
+    head,
     get tip() {
       return rodTip;
     },

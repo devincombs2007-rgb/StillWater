@@ -2304,6 +2304,20 @@ body.intro-done #title-screen {
   height: 116px;
   flex-shrink: 0;
 }
+.keeper-stage {
+  width: 176px;
+  height: 150px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px #c0b58d33, 0 8px 22px #0006;
+  background: #2b241d;
+}
+.keeper-stage canvas,
+.keeper-stage svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .keeper-welcome p {
   font:
     italic 17px/1.5 Georgia,
@@ -2371,6 +2385,10 @@ body.intro-done #title-screen {
   .keeper-portrait {
     width: 86px;
     height: 99px;
+  }
+  .keeper-stage {
+    width: 116px;
+    height: 124px;
   }
   .keeper-welcome .eyebrow {
     font-size: 6px;

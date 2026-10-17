@@ -47,7 +47,7 @@ import {
 import {createWorld} from './scene.js?v=7';
 import {createAudio} from './audio.js?v=7';
 import {showPreview, stopPreview} from './preview.js?v=7';
-import {fishThumbnail} from './preview.js?v=7';
+import {fishThumbnail, showKeeper, stopKeeper} from './preview.js?v=7';
 import {fishSvg} from './art.js?v=7';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
@@ -89,7 +89,8 @@ let currentView = 'lake',
   lastSave = lastTick,
   conditions = worldConditions(Date.now(), state.region);
 const MOODS = ['Moonlit', 'Sunset', 'Forest'];
-let freshDiscovery = false;
+let freshDiscovery = false,
+  keeperWave = false;
 let inTitle = true,
   introStarted = false;
 const hasExisting = !!state.character;
@@ -648,7 +649,7 @@ function shop() {
   return `${keeper()}<span class="eyebrow">MILO’S BAIT SHOP</span><h2 id="panel-title">Good tackle. Good company.</h2><p class="intro">${fmt(state.pearls)} pearls available. Rods, permanent lures, apparel, and your growing aquarium compete for the same pearls.</p><div class="tabs market-tabs">${tabs.map(([id, name]) => `<button data-tab="${id}" class="${shopTab === id ? 'selected' : ''}">${name}</button>`).join('')}</div><div class="shop-list">${list}</div>`;
 }
 function keeper() {
-  return `<div class="keeper-welcome"><svg class="keeper-portrait" viewBox="0 0 160 150" aria-label="Milo, the smiling bait shop keeper" role="img"><defs><linearGradient id="apron" x2="0" y2="1"><stop stop-color="#9ab49e"/><stop offset="1" stop-color="#527a6d"/></linearGradient></defs><circle cx="80" cy="76" r="65" fill="#c1ae8120"/><path d="M33 140V111Q40 86 80 86Q120 86 127 111V140" fill="#e7ce9e"/><path d="M57 93L47 139H113L103 93L92 108H68Z" fill="url(#apron)"/><rect x="64" y="116" width="32" height="18" rx="5" fill="#416959"/><path d="M69 123q11-12 22 0q-11 12-22 0" fill="#dfd8b5"/><ellipse cx="80" cy="64" rx="35" ry="37" fill="#d9ad85"/><ellipse cx="46" cy="64" rx="6" ry="10" fill="#d9ad85"/><ellipse cx="114" cy="64" rx="6" ry="10" fill="#d9ad85"/><path d="M45 53Q44 22 80 21Q113 20 116 54Q97 47 80 46Q61 47 45 53" fill="#a4936b"/><path d="M39 49Q80 31 121 49L126 57Q81 47 35 58Z" fill="#c9b98a"/><path d="M59 65q5-5 10 0M91 65q5-5 10 0" fill="none" stroke="#4d5045" stroke-width="3" stroke-linecap="round"/><ellipse cx="59" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><ellipse cx="101" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><path d="M68 81q12 12 24 0" fill="none" stroke="#825b4c" stroke-width="2.5" stroke-linecap="round"/><path d="M4 139H156V150H4Z" fill="#7d6a4f"/><path d="M8 143h144" stroke="#aa9470"/><path d="M123 119q12-19 19-4q5 9-6 18" fill="#d9ad85"/></svg><div><span class="eyebrow">MILO · YOUR BAIT KEEPER</span><p>“Hello! Welcome to the bait shop.”</p><small>A little patience. A lure you love.</small></div></div>`;
+  return `<div class="keeper-welcome"><div class="keeper-portrait keeper-stage" id="keeper-stage"><svg viewBox="0 0 160 150" aria-label="Milo, the smiling bait shop keeper" role="img"><defs><linearGradient id="apron" x2="0" y2="1"><stop stop-color="#9ab49e"/><stop offset="1" stop-color="#527a6d"/></linearGradient></defs><circle cx="80" cy="76" r="65" fill="#c1ae8120"/><path d="M33 140V111Q40 86 80 86Q120 86 127 111V140" fill="#e7ce9e"/><path d="M57 93L47 139H113L103 93L92 108H68Z" fill="url(#apron)"/><rect x="64" y="116" width="32" height="18" rx="5" fill="#416959"/><path d="M69 123q11-12 22 0q-11 12-22 0" fill="#dfd8b5"/><ellipse cx="80" cy="64" rx="35" ry="37" fill="#d9ad85"/><ellipse cx="46" cy="64" rx="6" ry="10" fill="#d9ad85"/><ellipse cx="114" cy="64" rx="6" ry="10" fill="#d9ad85"/><path d="M45 53Q44 22 80 21Q113 20 116 54Q97 47 80 46Q61 47 45 53" fill="#a4936b"/><path d="M39 49Q80 31 121 49L126 57Q81 47 35 58Z" fill="#c9b98a"/><path d="M59 65q5-5 10 0M91 65q5-5 10 0" fill="none" stroke="#4d5045" stroke-width="3" stroke-linecap="round"/><ellipse cx="59" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><ellipse cx="101" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><path d="M68 81q12 12 24 0" fill="none" stroke="#825b4c" stroke-width="2.5" stroke-linecap="round"/><path d="M4 139H156V150H4Z" fill="#7d6a4f"/><path d="M8 143h144" stroke="#aa9470"/><path d="M123 119q12-19 19-4q5 9-6 18" fill="#d9ad85"/></svg></div><div><span class="eyebrow">MILO · YOUR BAIT KEEPER</span><p>“Hello! Welcome to the bait shop.”</p><small>A little patience. A lure you love.</small></div></div>`;
 }
 function extrasView() {
   return `<span class="eyebrow">LITTLE DETAILS, LONG TIDES</span><h2 id="panel-title">Extra</h2><p>Created by ChatGPT and Devin Combs.</p><p><b>Free fishing</b> is the current game: build your collection, raise your fish, and decide where your pearls go.</p><p><b>Story mode</b> is a future idea. It has not been implemented. A story-led journey and a separate ongoing free-fishing mode are recorded in the development handoff.</p><p>Version 1.5 · The Living Water. All purchases use earned in-game pearls.</p><button class="secondary-button" id="extra-back">Back</button>`;
@@ -745,6 +746,8 @@ function helpView() {
 function openPanel(type) {
   if (type === 'journal') freshDiscovery = false;
   const enteringShop = type === 'shop' && panelType !== 'shop';
+  if (enteringShop) keeperWave = true;
+  if (type !== 'shop') stopKeeper();
   if (panelType === 'shop' && type !== 'shop') leaveShop();
   stopPreview();
   if (!panelType) focusBefore = document.activeElement;
@@ -800,6 +803,7 @@ function closePanel(force = false) {
   if (['catch', 'character'].includes(panelType) && !force) return;
   if (panelType === 'shop') leaveShop();
   stopPreview();
+  stopKeeper();
   $('#overlay').hidden = true;
   $('#overlay').classList.remove('catch-overlay');
   panelType = '';
@@ -821,6 +825,11 @@ function hydrateThumbs() {
 }
 function bindPanel() {
   if (panelType === 'journal' || panelType === 'residents') hydrateThumbs();
+  // Milo is rendered live in 3D; he waves when you walk in.
+  if (panelType === 'shop' && $('#keeper-stage')) {
+    showKeeper($('#keeper-stage'), keeperWave);
+    keeperWave = false;
+  }
   if (panelType === 'extras') $('#extra-back').onclick = () => closePanel();
   if (panelType === 'newgame') {
     $('#cancel-new').onclick = () => closePanel();

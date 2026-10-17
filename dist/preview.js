@@ -1,5 +1,8 @@
 import * as T from './assets/three.module.js';
 import {createFish, animateFish, disposeFish} from './fish.js?v=7';
+import {createAngler} from './angler.js?v=7';
+import {freshState} from './economy.js?v=7';
+import {surfaceTexture} from './textures.js?v=7';
 let renderer = null,
   scene,
   camera,
@@ -170,4 +173,142 @@ export function fishThumbnail(species, unknown = false) {
       }),
     );
   return thumbs.get(key);
+}
+
+// Milo behind his counter: the angler rig dressed as the shopkeeper, in a little shop
+// set with shelves of bait jars, a rod rack, a bell and warm light. Waves on arrival.
+let keeperRenderer = null,
+  keeperScene,
+  keeperCamera,
+  milo = null,
+  keeperFrame = 0,
+  keeperActive = false,
+  waveUntil = 0,
+  keeperLast = 0,
+  keeperClock = 0;
+function buildShop() {
+  keeperScene = new T.Scene();
+  keeperScene.background = new T.Color('#2b241d');
+  keeperScene.fog = new T.Fog('#2b241d', 6, 12);
+  keeperScene.add(new T.HemisphereLight('#ffe7c2', '#3a2c20', 1.6));
+  const key = new T.DirectionalLight('#ffe0b0', 2.4);
+  key.position.set(2, 4, 4);
+  keeperScene.add(key);
+  const lamp = new T.PointLight('#ffb867', 6, 6);
+  lamp.position.set(-0.9, 2.6, 0.6);
+  keeperScene.add(lamp);
+  const wood = (c, extra = {}) => new T.MeshStandardMaterial({color: c, roughness: 0.75, map: surfaceTexture('wood'), ...extra});
+  const box = (w, h, d, m, x, y, z) => {
+    const o = new T.Mesh(new T.BoxGeometry(w, h, d), m);
+    o.position.set(x, y, z);
+    keeperScene.add(o);
+    return o;
+  };
+  // Back wall, shelves and jars of bait.
+  box(6, 4, 0.1, wood('#5b4330'), 0, 2, -1.3);
+  const glass = new T.MeshStandardMaterial({color: '#cfe3dc', transparent: true, opacity: 0.35, roughness: 0.1});
+  for (const y of [1.55, 2.35]) {
+    box(3.4, 0.06, 0.4, wood('#3f2e22'), 0, y, -1.05);
+    for (let k = 0; k < 7; k++) {
+      const x = -1.5 + k * 0.5,
+        h = 0.26 + ((k * 7) % 3) * 0.06,
+        fill = new T.Mesh(new T.CylinderGeometry(0.09, 0.09, h * 0.7, 12), new T.MeshStandardMaterial({color: ['#c6968b', '#c5dfa0', '#d7e4d6', '#91c8d4', '#d8ab58'][(k + (y > 2 ? 2 : 0)) % 5], roughness: 0.6}));
+      fill.position.set(x, y + 0.03 + h * 0.35, -1.05);
+      keeperScene.add(fill);
+      const jar = new T.Mesh(new T.CylinderGeometry(0.1, 0.1, h, 14), glass);
+      jar.position.set(x, y + 0.03 + h / 2, -1.05);
+      keeperScene.add(jar);
+      const lid = new T.Mesh(new T.CylinderGeometry(0.105, 0.105, 0.04, 14), new T.MeshStandardMaterial({color: '#b39a62', metalness: 0.6, roughness: 0.35}));
+      lid.position.set(x, y + 0.05 + h, -1.05);
+      keeperScene.add(lid);
+    }
+  }
+  // Rod rack on the right.
+  for (let k = 0; k < 3; k++) {
+    const r = new T.Mesh(new T.CylinderGeometry(0.012, 0.022, 2.6, 6), new T.MeshStandardMaterial({color: ['#5d6b5e', '#7a5a3c', '#3f5560'][k], roughness: 0.4}));
+    r.position.set(1.7 + k * 0.18, 1.6, -1.1);
+    r.rotation.z = 0.08;
+    keeperScene.add(r);
+  }
+  // Counter with a brass bell and a little sign.
+  box(3.2, 1.2, 0.8, wood('#7a5a3e'), 0, 0.6, 0.55);
+  box(3.4, 0.08, 0.95, wood('#9b7a55'), 0, 1.24, 0.55);
+  const bell = new T.Mesh(new T.SphereGeometry(0.09, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), new T.MeshStandardMaterial({color: '#d4b46a', metalness: 0.85, roughness: 0.25}));
+  bell.position.set(0.95, 1.28, 0.65);
+  keeperScene.add(bell);
+  const sign = box(0.7, 0.28, 0.04, new T.MeshStandardMaterial({color: '#e8dcc0', roughness: 0.8}), -0.9, 1.42, 0.62);
+  sign.rotation.x = -0.25;
+  // Milo himself.
+  const st = freshState();
+  st.character = {name: 'Milo', skin: 1, hair: 2, style: 1};
+  st.outfit.hat = 'hat1';
+  const rig = createAngler(keeperScene, st);
+  rig.group.position.set(0, 0, -0.45);
+  rig.group.rotation.y = 0;
+  rig.group.getObjectByName('Bending rod').visible = false;
+  rig.materials.hair.color.set('#a39b8c');
+  rig.materials.cloth.color.set('#e7ce9e');
+  rig.materials.hat.color.set('#6f8f78');
+  const apronMat = new T.MeshStandardMaterial({color: '#527a6d', roughness: 0.85, map: surfaceTexture('cloth'), side: T.DoubleSide});
+  const apron = new T.Mesh(new T.CylinderGeometry(0.29, 0.31, 1.0, 20, 1, true, -Math.PI * 0.42, Math.PI * 0.84), apronMat);
+  apron.scale.set(1.15, 1, 0.78);
+  apron.position.set(0, 1.25, 0);
+  rig.group.add(apron);
+  const bib = new T.Mesh(new T.BoxGeometry(0.3, 0.32, 0.02), apronMat);
+  bib.position.set(0, 1.66, 0.2);
+  rig.group.add(bib);
+  const pocket = new T.Mesh(new T.BoxGeometry(0.2, 0.12, 0.02), new T.MeshStandardMaterial({color: '#416959', roughness: 0.9}));
+  pocket.position.set(0, 1.62, 0.212);
+  rig.group.add(pocket);
+  const tash = new T.Mesh(new T.CapsuleGeometry(0.018, 0.07, 4, 8), rig.materials.hair);
+  tash.rotation.z = Math.PI / 2;
+  tash.position.set(0, -0.075, 0.2);
+  rig.head.add(tash);
+  milo = rig;
+  keeperCamera = new T.PerspectiveCamera(32, 1.3, 0.1, 30);
+}
+function keeperTick(ms) {
+  if (!keeperActive) return;
+  keeperFrame = requestAnimationFrame(keeperTick);
+  if (document.hidden || ms - keeperLast < 1000 / 30) return;
+  const dt = Math.min(0.05, (ms - keeperLast) / 1000);
+  keeperLast = ms;
+  keeperClock += dt;
+  milo.update(dt, keeperClock, keeperClock < waveUntil ? 'wave' : 'keeper');
+  keeperRenderer.render(keeperScene, keeperCamera);
+}
+export function showKeeper(container, wave = false) {
+  keeperActive = false;
+  try {
+    cancelAnimationFrame(keeperFrame);
+    if (!keeperRenderer) {
+      keeperRenderer = new T.WebGLRenderer({antialias: true, powerPreference: 'low-power'});
+      keeperRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      keeperRenderer.outputColorSpace = T.SRGBColorSpace;
+      keeperRenderer.toneMapping = T.ACESFilmicToneMapping;
+      buildShop();
+    }
+    container.replaceChildren(keeperRenderer.domElement);
+    const w = container.clientWidth || 190,
+      h = container.clientHeight || 150;
+    keeperRenderer.setSize(w, h);
+    keeperCamera.aspect = w / h;
+    keeperCamera.position.set(0.45, 1.98, 2.6);
+    keeperCamera.lookAt(0, 1.8, 0);
+    keeperCamera.updateProjectionMatrix();
+    if (wave) waveUntil = keeperClock + 2.4;
+    keeperLast = performance.now();
+    keeperActive = true;
+    keeperFrame = requestAnimationFrame(keeperTick);
+    return true;
+  } catch {
+    keeperActive = false;
+    return false;
+  }
+}
+export function stopKeeper() {
+  keeperActive = false;
+  if (!keeperRenderer) return;
+  cancelAnimationFrame(keeperFrame);
+  keeperRenderer.domElement.remove();
 }
