@@ -1,7 +1,7 @@
 import * as T from './assets/three.module.js';
 import {surfaceTexture} from './textures.js?v=7';
 import {APPAREL} from './economy.js?v=7';
-import {lathe, displace, tube} from './models.js?v=7';
+import {lathe, displace, tube, consolidate} from './models.js?v=7';
 export const SKINS = ['#edc7a6', '#d3a37e', '#b17f5c', '#875e45', '#624735'],
   HAIRS = ['#302b29', '#65503b', '#a58455', '#352b32'];
 const V = (x, y, z) => new T.Vector3(x, y, z);
@@ -73,6 +73,7 @@ export function createAngler(parent, state) {
     cloth,
   );
   torso.name = 'Torso';
+  torso.userData.dynamic = true;
   add(new T.TorusGeometry(0.246, 0.022, 8, 32), leather, [0, 1.03, 0], [1.12, 0.7, 1], g, [Math.PI / 2, 0, 0]);
   add(new T.BoxGeometry(0.08, 0.06, 0.02), brass, [0, 1.03, 0.178]);
   for (let i = 0; i < 4; i++) add(sphere, button, [0, 1.2 + i * 0.13, 0.177 + i * 0.006], [0.011, 0.011, 0.006]);
@@ -113,7 +114,9 @@ export function createAngler(parent, state) {
     sp.setXYZ(i, x, y, z);
   }
   skull.computeVertexNormals();
-  add(skull, skin, [0, 0, 0], [0.2, 0.235, 0.205], head).name = 'Head';
+  const skullMesh = add(skull, skin, [0, 0, 0], [0.2, 0.235, 0.205], head);
+  skullMesh.name = 'Head';
+  skullMesh.userData.dynamic = true;
   for (const sx of [-1, 1]) {
     add(sphere, skin, [sx * 0.198, -0.01, -0.015], [0.028, 0.058, 0.042], head, [0, sx * 0.3, 0]);
   }
@@ -127,6 +130,7 @@ export function createAngler(parent, state) {
     add(sphere, eyeWhite, [ex + 0.008, 0.032, 0.197], [0.005, 0.006, 0.002], head);
     eyes.push(ir);
     const lid = add(new T.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), skin, [ex, 0.03, 0.166], [0.044, 0.03, 0.03], head, [0.3, 0, 0]);
+    lid.userData.dynamic = true;
     lids.push(lid);
     add(tube([V(ex - 0.035, 0.083, 0.17), V(ex, 0.095, 0.182), V(ex + 0.035, 0.085, 0.172)], 0.0075, 6), hairMat, [0, 0, 0], 1, head);
   }
@@ -194,6 +198,7 @@ export function createAngler(parent, state) {
       add(tube([V(x, -0.055, 0.01), V(x, -0.085 * len, 0.03), V(x, -0.078 * len, 0.06), V(x, -0.055, 0.07)], 0.0125, 7), skin, [0, 0, 0], 1, hand);
     }
     add(tube([V(side * 0.04, -0.02, 0.02), V(side * 0.05, -0.04, 0.055), V(side * 0.02, -0.05, 0.075)], 0.013, 7), skin, [0, 0, 0], 1, hand);
+    for (const m of [upper, fore, shoulder, elbow]) m.userData.dynamic = true;
     arms.push({side, upper, fore, hand, shoulder, elbow});
   }
 
@@ -211,6 +216,7 @@ export function createAngler(parent, state) {
     const r0 = 0.017 - i * 0.00085,
       r1 = 0.017 - (i + 1) * 0.00085;
     const m = new T.Mesh(new T.CylinderGeometry(r1, r0, 1, 10), blank);
+    m.userData.dynamic = true;
     rod.add(m);
     return m;
   });
@@ -243,6 +249,7 @@ export function createAngler(parent, state) {
   add(new T.TorusGeometry(0.048, 0.0035, 5, 22, Math.PI), chrome, [0, 0.09, 0], 1, reelHousing, [0, 0, Math.PI / 2]);
   const crankArm = add(new T.CylinderGeometry(0.006, 0.006, 1, 6), reelBody),
     knob = add(new T.CapsuleGeometry(0.014, 0.03, 4, 10), cork);
+  crankArm.userData.dynamic = knob.userData.dynamic = true;
   reelHousing.rotation.set(-Math.PI / 2, 0, 0);
 
   let rodTip = new T.Vector3(),
@@ -299,15 +306,16 @@ export function createAngler(parent, state) {
     pose += (Number(held) - pose) * (1 - Math.exp(-dt * 5));
     if (mode === 'reeling' || mode === 'landing') reelPhase += dt * (mode === 'landing' ? 18 : 9);
     const breathe = Math.sin(t * 1.7) * 0.01;
+    // First person brings both hands up in front of the chest, just below the eye line.
     const left = V(
-        0.4 - firstBlend * 0.24,
-        1.57 + pose * 0.9 + breathe + firstBlend * 0.9,
-        0.46 - pose * 0.05 + firstBlend * 0.75,
+        0.4 - firstBlend * 0.2,
+        1.57 + pose * 0.9 + breathe + firstBlend * 0.58,
+        0.46 - pose * 0.05 + firstBlend * 0.59,
       ),
       right = V(
-        -0.05 + firstBlend * 0.1,
-        1.43 + pose * 0.52 + Math.sin(reelPhase) * 0.075 + firstBlend * 1.0,
-        0.47 + Math.cos(reelPhase) * 0.08 + firstBlend * 0.75,
+        -0.05 + firstBlend * 0.05,
+        1.43 + pose * 0.52 + Math.sin(reelPhase) * 0.075 + firstBlend * 0.67,
+        0.47 + Math.cos(reelPhase) * 0.08 + firstBlend * 0.53,
       );
     left.y += chargeBlend * 0.26;
     left.z -= chargeBlend * 0.7;
@@ -328,6 +336,8 @@ export function createAngler(parent, state) {
       a.shoulder.position.copy(shoulder);
       a.elbow.position.copy(elbow);
       a.elbow.quaternion.copy(a.fore.quaternion).multiply(new T.Quaternion().setFromAxisAngle(V(1, 0, 0), Math.PI / 2));
+      // The upper arm passes right by the first-person camera: only the forearm is shown.
+      a.upper.visible = a.shoulder.visible = a.elbow.visible = firstBlend < 0.5;
       a.hand.position.copy(hand);
       a.hand.quaternion.copy(a.fore.quaternion);
       a.hand.rotateX(-0.25);
@@ -387,6 +397,12 @@ export function createAngler(parent, state) {
     hangAnchor.set(-0.48, 3.04, 0.85);
     g.localToWorld(hangAnchor);
   }
+  // Everything else is rigid relative to its parent: merge it to keep draw calls (and the
+  // shadow pass) cheap.
+  g.traverse(o => {
+    if (o.isMesh) o.castShadow = true;
+  });
+  consolidate(g);
   refresh();
   update(0.02, 0, 'idle');
   return {

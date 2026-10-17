@@ -194,7 +194,9 @@ export function createEnvironment(parent, state, water) {
       a.setY(i, y);
     }
     g.computeVertexNormals();
-    return mesh(g, mat(color), [cx, 0, cz], [1, 1, 1], par);
+    const land = mesh(g, mat(color), [cx, 0, cz], [1, 1, 1], par);
+    land.receiveShadow = true;
+    return land;
   }
   terrain(-23, -7, 27, 68, 3.4, '#55745b');
   terrain(27, -16, 32, 75, 4.5, '#506f56');
@@ -275,6 +277,7 @@ export function createEnvironment(parent, state, water) {
       stones.setMatrixAt(i, matrix.matrix);
     });
     stones.computeBoundingSphere();
+    stones.castShadow = stones.receiveShadow = true;
     fresh.add(stones);
   });
   const glowMat = mat('#f7dcad', {emissive: '#e8b674', emissiveIntensity: 0.2});
@@ -430,6 +433,8 @@ export function createEnvironment(parent, state, water) {
   let anchored = boat(1.55, state.boat),
     boatTier = state.boat;
   anchored.position.set(0, 0.35, 8.7);
+  const shadeBoat = b => b.traverse(o => o.isMesh && (o.castShadow = o.receiveShadow = true));
+  shadeBoat(anchored);
   salt.add(anchored);
   const titleShore = new T.Group();
   titleShore.visible = false;
@@ -518,6 +523,7 @@ export function createEnvironment(parent, state, water) {
           }
         });
         anchored = boat(1.55, state.boat);
+        shadeBoat(anchored);
         salt.add(anchored);
         boatTier = state.boat;
       }

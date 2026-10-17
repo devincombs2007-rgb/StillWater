@@ -180,3 +180,36 @@ export function vcMaterial(key = 'matte', extra = {}) {
     materials.set(key, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.82, ...extra}));
   return materials.get(key);
 }
+
+// Collapse static meshes that share a parent and material into one mesh each. Meshes (or
+// ancestors) flagged userData.dynamic are left alone so they can still be posed per frame.
+export function consolidate(root) {
+  const groups = new Map();
+  root.traverse(o => {
+    if (!o.isMesh || o.isInstancedMesh || o.children.length || o.userData.dynamic || !o.parent) return;
+    for (let p = o.parent; p && p !== root.parent; p = p.parent) if (p.userData.dynamic) return;
+    const key = o.parent.uuid + ':' + o.material.uuid;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(o);
+  });
+  let removed = 0;
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    const parent = list[0].parent,
+      material = list[0].material;
+    const parts = list.map(m => {
+      m.updateMatrix();
+      const g = m.geometry.clone();
+      g.applyMatrix4(m.matrix);
+      return g;
+    });
+    for (const m of list) parent.remove(m);
+    const merged = new T.Mesh(merge(parts), material);
+    merged.name = list.find(m => m.name)?.name || '';
+    merged.castShadow = list.some(m => m.castShadow);
+    merged.receiveShadow = list.some(m => m.receiveShadow);
+    parent.add(merged);
+    removed += list.length - 1;
+  }
+  return removed;
+}

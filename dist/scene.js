@@ -58,6 +58,18 @@ export function createWorld(canvas, state, onError) {
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
+  // Soft sun shadows ground everything near the angler (and in the tank). Off on Battery.
+  renderer.shadowMap.enabled = state.quality !== 'battery';
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  const shade = (obj, cast = true, receive = false) => {
+    obj.traverse(o => {
+      if (o.isMesh) {
+        o.castShadow = cast;
+        o.receiveShadow = receive;
+      }
+    });
+    return obj;
+  };
   const scene = new T.Scene();
   scene.background = new T.Color('#18363e');
   scene.fog = new T.FogExp2('#35575b', 0.0065);
@@ -69,8 +81,27 @@ export function createWorld(canvas, state, onError) {
   const hemi = new T.HemisphereLight('#c6e2de', '#163b3b', 2);
   scene.add(hemi);
   const sun = new T.DirectionalLight('#ffdfb8', 2.1);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(state.quality === 'crisp' ? 2048 : 1024, state.quality === 'crisp' ? 2048 : 1024);
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.03;
+  sun.shadow.radius = 3;
+  const sunTarget = new T.Object3D();
+  sun.target = sunTarget;
+  function aimShadow(x, y, z, extent, distance) {
+    sunTarget.position.set(x, y, z);
+    sunTarget.updateMatrixWorld();
+    const cam = sun.shadow.camera;
+    if (cam.right !== extent) {
+      cam.left = cam.bottom = -extent;
+      cam.right = cam.top = extent;
+      cam.near = 1;
+      cam.far = distance * 2.2;
+      cam.updateProjectionMatrix();
+    }
+  }
   sun.position.set(-15, 24, 8);
-  scene.add(sun);
+  scene.add(sun, sunTarget);
   const fill = new T.DirectionalLight('#79b9d7', 1);
   fill.position.set(12, 8, -12);
   scene.add(fill);
@@ -245,14 +276,15 @@ export function createWorld(canvas, state, onError) {
       soundCallback('bobber');
     }
   });
+  shade(tackle.float);
   const dock = new T.Group();
   lake.add(dock);
   dock.position.set(0, 0, 8);
   // Deck top sits at y 0.3, where the angler's boots stand.
-  mesh(dockGeometry(6.7, 3.1, 4), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9, map: surfaceTexture('wood')}), dock, [0, 0.055, 1.42]);
+  shade(mesh(dockGeometry(6.7, 3.1, 4), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9, map: surfaceTexture('wood')}), dock, [0, 0.055, 1.42]), true, true);
   const lamp = lantern(mat('#e9c58e', {emissive: '#f3b15d', emissiveIntensity: 1, transparent: true, opacity: 0.7}));
   lamp.position.set(-1, 0.3, 6.6);
-  lake.add(lamp);
+  lake.add(shade(lamp));
   const warm = new T.PointLight('#ffd69c', 6, 9);
   warm.position.set(-1, 0.9, 6.6);
   lake.add(warm);
@@ -264,6 +296,7 @@ export function createWorld(canvas, state, onError) {
     reedParts.push(place(reedGeometry(i + 1), [x, -0.15, z], [0, Math.random() * 6, side * 0.08]));
   }
   const reeds = mesh(merge(reedParts), addSway(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.85}), 0.07), lake);
+  reeds.castShadow = true;
   reeds.userData.freshOnly = true;
   const rippleMeshes = [];
   for (let i = 0; i < 3; i++) {
@@ -317,7 +350,7 @@ export function createWorld(canvas, state, onError) {
             disposeFish(jumper);
           }
           const pool = SPECIES.filter(f => (ocean ? f.region >= 3 : f.region < 3) && f.rarity < 2);
-          jumper = createFish(pool[Math.floor(Math.random() * pool.length)]);
+          jumper = shade(createFish(pool[Math.floor(Math.random() * pool.length)]));
           jumper.scale.multiplyScalar(0.8);
           jumperRegion = region;
           lake.add(jumper);
@@ -377,7 +410,7 @@ export function createWorld(canvas, state, onError) {
     stand.push(paint(place(new T.BoxGeometry(1.7, 1.5, 0.06), [x, -1.25, 2.86]), woodTone));
     stand.push(paint(place(new T.SphereGeometry(0.06, 8, 6), [x + (k % 2 ? -0.75 : 0.75), -1.15, 2.92]), '#c9a86a'));
   }
-  mesh(merge(stand), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.55}), tank);
+  shade(mesh(merge(stand), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.55}), tank), false, true);
   // Inner floor slab under the substrate.
   mesh(geoBox, mat('#2e3d38'), tank, [0, 0.12, 0], [9.2, 0.12, 5.2]);
   const glassMat = new T.MeshPhysicalMaterial({
@@ -455,6 +488,7 @@ export function createWorld(canvas, state, onError) {
   sandGeo.computeVertexNormals();
   paint(sandGeo, (x, y, z, out) => out.set('#bfae86').lerp(new T.Color('#8e7f62'), Math.max(0, fbm(x * 3, y * 3, 0, 2) + 0.2)).multiplyScalar(0.9 + Math.random() * 0.12));
   const sand = mesh(sandGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}), tank, [0, 0.3, 0]);
+  sand.receiveShadow = true;
   sand.rotation.x = -Math.PI / 2;
   const substrate = (x, z) => 0.3 + Math.max(0, (2.5 - z) / 5) * 0.32 + fbm(x * 0.9, -z * 0.9, 0, 8) * 0.12;
   const gravelGeo = new T.IcosahedronGeometry(0.05, 0),
@@ -571,6 +605,11 @@ export function createWorld(canvas, state, onError) {
     l.rotation.set((i - 1) * 0.15, i * 0.8, (i - 1) * 0.12);
     lanterns.add(l);
   }
+  // Decor, plants and stones cast and catch the light from above; glass and water do not.
+  tank.traverse(o => {
+    if (o.isMesh && o.material?.isMeshStandardMaterial && !o.material.transparent && o !== sand) o.castShadow = o.receiveShadow = true;
+  });
+  gravel.castShadow = false;
   const bubblesGeo = new T.BufferGeometry();
   const bubbleCoords = [];
   for (let i = 0; i < 45; i++)
@@ -709,7 +748,7 @@ export function createWorld(canvas, state, onError) {
         disposeFish(old.mesh);
       }
       const f = species.find(x => x.id === resident.id);
-      const model = createFish(f);
+      const model = shade(createFish(f));
       fishGroup.add(model);
       model.userData.uid = resident.uid;
       const motion = makeSwimmer(i, state.fish.length);
@@ -1042,7 +1081,9 @@ export function createWorld(canvas, state, onError) {
       gradient.uniforms.sunDir.value.copy(lightDir);
       gradient.uniforms.sunColor.value.copy(sky[2]);
       gradient.uniforms.glow.value += ((day ? 0.55 + sunUp * 0.45 : 0.18) - gradient.uniforms.glow.value) * blend;
-      sun.position.copy(lightDir).multiplyScalar(50);
+      // Shadows follow the angler; the lake sun keeps its sky direction.
+      aimShadow(0, 1, 7.5, 9, 40);
+      sun.position.copy(sunTarget.position).addScaledVector(lightDir, 40);
       sun.color.copy(sky[2]);
       sun.intensity += ((night ? 0.55 : 0.7 + sunUp * 1.9) - sun.intensity) * blend;
       hemi.color.copy(sky[0]).lerp(skyA.set('#ffffff'), 0.45);
@@ -1084,6 +1125,9 @@ export function createWorld(canvas, state, onError) {
       }
     } else {
       radius += (targetRadius - radius) * 0.07;
+      // Tank light falls from above through the water surface.
+      aimShadow(0, 1.5, 0, 6.5, 22);
+      sun.position.set(-4, 20, 5);
       const centerY = mobile ? 2.5 : 2.2;
       camera.position.set(
         Math.sin(theta) * Math.sin(phi) * radius,
@@ -1229,6 +1273,13 @@ export function createWorld(canvas, state, onError) {
       applyPalette();
     },
     setQuality: () => {
+      const shadows = state.quality !== 'battery';
+      if (renderer.shadowMap.enabled !== shadows) {
+        renderer.shadowMap.enabled = shadows;
+        scene.traverse(o => {
+          if (o.material) for (const m of [o.material].flat()) m.needsUpdate = true;
+        });
+      }
       renderer.setPixelRatio(
         Math.min(devicePixelRatio, state.quality === 'battery' ? 1 : state.quality === 'crisp' ? 2 : 1.5),
       );
@@ -1263,7 +1314,7 @@ export function createWorld(canvas, state, onError) {
         lake.remove(heldFish);
         disposeFish(heldFish);
       }
-      heldFish = createFish(SPECIES.find(f => f.id === fish.id));
+      heldFish = shade(createFish(SPECIES.find(f => f.id === fish.id)));
       const maxLength = heldFish.userData.profile.len * heldFish.scale.x;
       if (maxLength > 1.5) heldFish.scale.multiplyScalar(1.5 / maxLength);
       const color = RARITY_COLORS[SPECIES.find(f => f.id === fish.id).rarity];
