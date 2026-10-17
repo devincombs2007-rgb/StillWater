@@ -5,6 +5,8 @@ import {createWater, createEnvironment, addSway} from './environment.js?v=7';
 import {createAngler} from './angler.js?v=7';
 import {createTackle} from './tackle.js?v=7';
 import {surfaceTexture, cloudTexture} from './textures.js?v=7';
+import {rockGeometry, dockGeometry, lantern, reedGeometry} from './scenery.js?v=7';
+import {place, merge, fbm} from './models.js?v=7';
 import {createTankSurface} from './surface.js?v=7';
 import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=7';
 import {worldConditions} from './fishing.js?v=7';
@@ -138,19 +140,30 @@ export function createWorld(canvas, state, onError) {
     [-23, 29, -87.8],
   );
   function mountain(x, z, w, h, color) {
-    const g = new T.BufferGeometry();
-    const verts = [];
-    const steps = 16;
+    // Fractal ridge line; the tallest crests carry a little snow via vertex colour.
+    const g = new T.BufferGeometry(),
+      verts = [],
+      colors = [],
+      steps = 72,
+      seed = x * 0.13 + z * 0.07;
+    const ridge = u =>
+      Math.max(0.03, Math.pow(Math.sin(u * Math.PI), 0.8)) * (0.72 + fbm(u * 5, seed, 0, 3, 4) * 0.55 + Math.abs(fbm(u * 19, seed, 1, 5, 2)) * 0.18);
     for (let i = 0; i < steps; i++) {
-      const x1 = -w / 2 + (i * w) / steps,
-        x2 = x1 + w / steps;
-      const a = Math.max(0.03, Math.sin((i / steps) * Math.PI)) * (0.78 + Math.sin(i * 1.8) * 0.15);
-      const b = Math.max(0.03, Math.sin(((i + 1) / steps) * Math.PI)) * (0.78 + Math.sin((i + 1) * 1.8) * 0.15);
-      verts.push(x1, 0, 0, x2, 0, 0, x1, a * h, 0, x2, 0, 0, x2, b * h, 0, x1, a * h, 0);
+      const u1 = i / steps,
+        u2 = (i + 1) / steps,
+        x1 = -w / 2 + u1 * w,
+        x2 = -w / 2 + u2 * w,
+        a = ridge(u1) * h,
+        b = ridge(u2) * h;
+      verts.push(x1, 0, 0, x2, 0, 0, x1, a, 0, x2, 0, 0, x2, b, 0, x1, a, 0);
+      const snow = y => (h > 40 && y > h * 0.82 ? 1.55 : 1),
+        foot = 0.82;
+      colors.push(foot, foot, foot, foot, foot, foot, snow(a), snow(a), snow(a), foot, foot, foot, snow(b), snow(b), snow(b), snow(a), snow(a), snow(a));
     }
     g.setAttribute('position', new T.Float32BufferAttribute(verts, 3));
+    g.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
     g.computeVertexNormals();
-    const m = mesh(g, new T.MeshBasicMaterial({color, side: T.DoubleSide}), lake, [x, -0.2, z]);
+    const m = mesh(g, new T.MeshBasicMaterial({color, side: T.DoubleSide, vertexColors: true}), lake, [x, -0.2, z]);
     // Distant ranges take their colour from the sky (aerial perspective) instead of glowing at night.
     ranges.push({mesh: m, base: new T.Color(color), haze: Math.min(0.75, Math.max(0.2, (-z - 50) / 120))});
     return m;
@@ -162,43 +175,19 @@ export function createWorld(canvas, state, onError) {
   mountain(80, -99, 130, 39, '#4b7375');
   mountain(-95, -65, 140, 35, '#31595d');
   mountain(65, -65, 100, 29, '#345d60');
-  const treeMat = mat('#183f40'),
-    trunkMat = mat('#3a4c44');
-  const cone = new T.ConeGeometry(1, 1, 7);
-  function pine(x, z, h, scale = 1) {
-    const g = new T.Group();
-    g.position.set(x, 0, z);
-    g.visible = false;
-    lake.add(g);
-    mesh(geoCylinder, trunkMat, g, [0, h * 0.28, 0], [0.11 * scale, h * 0.6, 0.11 * scale]);
-    for (let j = 0; j < 3; j++)
-      mesh(
-        cone,
-        treeMat,
-        g,
-        [0, h * (0.42 + j * 0.2), 0],
-        [(1.35 - j * 0.28) * scale, h * 0.63, (1.35 - j * 0.28) * scale],
-      );
-  }
-  for (let i = 0; i < 35; i++) {
-    const x = -75 + i * 4.3;
-    pine(x, -52 - Math.sin(i) * 4, 5 + Math.sin(i * 2.5) * 2.5, 1.3);
-  }
-  for (let i = 0; i < 12; i++) {
-    pine(-22 - i * 2, -15 - i * 3, 7 + Math.random() * 4, 1.2);
-    pine(26 + i * 2, -17 - i * 3, 7 + Math.random() * 5, 1.3);
-  }
+  const treeMat = mat('#183f40');
   // A mossy cascade gives Fernwater its own silhouette and moving current.
   const creek = new T.Group();
   creek.visible = false;
   lake.add(creek);
+  const creekStone = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9});
   for (let i = 0; i < 9; i++) {
     const rock = mesh(
-      new T.DodecahedronGeometry(1, 0),
-      mat(i % 2 ? '#536f64' : '#6e8170'),
+      rockGeometry(30 + i, true, ['#55695f', '#718273']),
+      creekStone,
       creek,
       [-9 + (i % 3) * 1.15, Math.floor(i / 3) * 1.05, -21 - Math.floor(i / 3) * 0.9],
-      [1.3, 1, 1],
+      [1.35, 1.05, 1.1],
     );
     rock.rotation.y = i;
   }
@@ -222,14 +211,20 @@ export function createWorld(canvas, state, onError) {
     const side = i % 2 ? -1 : 1;
     const x = side * (13 + Math.random() * 9),
       z = -10 - Math.random() * 27;
-    const stone = mesh(
-      new T.OctahedronGeometry(0.5 + Math.random() * 0.7),
-      mat('#758fa0', {emissive: '#6783a7', emissiveIntensity: 0.45, roughness: 0.4}),
-      cove,
-      [x, 0.4, z],
-      [0.7, 1.5, 0.7],
-    );
-    stone.rotation.z = (Math.random() - 0.5) * 0.4;
+    // Glowing crystal clusters: hexagonal prisms with faceted points.
+    const shards = [];
+    for (let k = 0; k < 5; k++) {
+      const hgt = (0.6 + Math.random() * 1.2) * (k ? 0.7 : 1),
+        rad = 0.12 + Math.random() * 0.12,
+        tilt = k ? [(Math.random() - 0.5) * 0.9, Math.random() * 6, (Math.random() - 0.5) * 0.9] : [0, Math.random(), 0];
+      const prism = new T.CylinderGeometry(rad, rad * 1.1, hgt, 6);
+      prism.translate(0, hgt / 2, 0);
+      const tip = new T.ConeGeometry(rad, rad * 2.2, 6);
+      tip.translate(0, hgt + rad * 1.1, 0);
+      shards.push(place(merge([prism, tip]), [(Math.random() - 0.5) * 0.4, 0, (Math.random() - 0.5) * 0.4], tilt));
+    }
+    const stone = mesh(merge(shards), mat('#7f99b0', {emissive: '#6783a7', emissiveIntensity: 0.45, roughness: 0.25, metalness: 0.1, flatShading: true}), cove, [x, -0.1, z], [1.2, 1.2, 1.2]);
+    stone.rotation.z = (Math.random() - 0.5) * 0.2;
   }
   const waterSystem = createWater(lake);
   const surroundings = createEnvironment(lake, state, waterSystem);
@@ -250,57 +245,26 @@ export function createWorld(canvas, state, onError) {
       soundCallback('bobber');
     }
   });
-  const woodA = mat('#6f6954', {map: surfaceTexture('wood')}),
-    woodB = mat('#77705a', {map: surfaceTexture('wood')}),
-    woodDark = mat('#3c483d');
   const dock = new T.Group();
   lake.add(dock);
   dock.position.set(0, 0, 8);
-  for (let i = 0; i < 14; i++) {
-    const b = mesh(geoBox, i % 2 ? woodA : woodB, dock, [0, 0.11, i * 0.48 - 1.7], [3.1, 0.19, 0.455]);
-    b.rotation.y = Math.sin(i) * 0.004;
-    for (const x of [-1.2, 1.2])
-      mesh(geoSphere, mat('#3e453c'), dock, [x, 0.212, i * 0.48 - 1.7], [0.022, 0.01, 0.022]);
-  }
-  for (const x of [-1.4, 1.4])
-    for (const z of [-1.5, 4.3]) mesh(geoCylinder, woodDark, dock, [x, -0.18, z], [0.13, 1.2, 0.13]);
-  const rod = new T.Group();
-  rod.visible = false;
-  dock.add(rod);
-  rod.position.set(1, 0.5, -1);
-  rod.rotation.z = -0.6;
-  rod.rotation.x = -0.55;
-  mesh(new T.CylinderGeometry(0.022, 0.045, 4.5, 8), mat('#a6a584'), rod, [0, 2.2, 0]);
-  mesh(geoCylinder, mat('#6d4d37'), rod, [0, 0.25, 0], [0.065, 0.6, 0.065]);
-  mesh(new T.TorusGeometry(0.12, 0.025, 8, 18), mat('#b8b9a3', {metalness: 0.6}), rod, [0.07, 0.6, 0.05]);
-  const lamp = new T.Group();
-  lamp.position.set(-1, 0.45, 6.6);
+  // Deck top sits at y 0.3, where the angler's boots stand.
+  mesh(dockGeometry(6.7, 3.1, 4), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9, map: surfaceTexture('wood')}), dock, [0, 0.055, 1.42]);
+  const lamp = lantern(mat('#e9c58e', {emissive: '#f3b15d', emissiveIntensity: 1, transparent: true, opacity: 0.7}));
+  lamp.position.set(-1, 0.3, 6.6);
   lake.add(lamp);
-  mesh(geoCylinder, mat('#394e48'), lamp, [0, 0, 0], [0.22, 0.12, 0.22]);
-  mesh(
-    geoCylinder,
-    mat('#e9c58e', {emissive: '#f3b15d', emissiveIntensity: 1, transparent: true, opacity: 0.65}),
-    lamp,
-    [0, 0.3, 0],
-    [0.16, 0.55, 0.16],
-  );
-  mesh(new T.ConeGeometry(0.25, 0.18, 8), mat('#48564a'), lamp, [0, 0.63, 0]);
   const warm = new T.PointLight('#ffd69c', 6, 9);
   warm.position.set(-1, 0.9, 6.6);
   lake.add(warm);
-  const reedMat = addSway(mat('#6c8d73'), 0.07);
-  for (let i = 0; i < 28; i++) {
-    const side = i < 14 ? -1 : 1;
-    const x = side * (4 + Math.random() * 5),
+  const reedParts = [];
+  for (let i = 0; i < 34; i++) {
+    const side = i < 17 ? -1 : 1,
+      x = side * (4 + Math.random() * 5),
       z = 4 + Math.random() * 9;
-    const h = 0.9 + Math.random() * 1.6;
-    const r = mesh(new T.CylinderGeometry(0.018, 0.027, h, 4), reedMat, lake, [x, h * 0.45, z]);
-    r.rotation.z = side * 0.15;
-    r.userData.freshOnly = true;
-    const leaf = mesh(cone, reedMat, lake, [x + side * 0.2, h * 0.55, z], [0.1, h * 0.65, 0.06]);
-    leaf.rotation.z = -side * 0.5;
-    leaf.userData.freshOnly = true;
+    reedParts.push(place(reedGeometry(i + 1), [x, -0.15, z], [0, Math.random() * 6, side * 0.08]));
   }
+  const reeds = mesh(merge(reedParts), addSway(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.85}), 0.07), lake);
+  reeds.userData.freshOnly = true;
   const rippleMeshes = [];
   for (let i = 0; i < 3; i++) {
     const r = mesh(

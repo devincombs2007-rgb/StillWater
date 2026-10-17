@@ -2,6 +2,18 @@ import * as T from './assets/three.module.js';
 import {surfaceTexture} from './textures.js?v=7';
 import {buoyancyPose, createHullMotion, hullTarget} from './surface.js?v=7';
 import {BOATS} from './economy.js?v=7';
+import {
+  broadleafGeometry,
+  pineGeometry,
+  rockGeometry,
+  cottage,
+  car as carModel,
+  walker as walkerModel,
+  palmGeometry,
+  harborBuilding,
+  gull,
+  flapGull,
+} from './scenery.js?v=7';
 const TAU = Math.PI * 2;
 // Shoreline banks shared by the scenery, grass and the water shader's shallows.
 const BANKS = [
@@ -138,7 +150,7 @@ export function addSway(material, amount, base = 0) {
         #ifdef USE_INSTANCING
           vec3 ip = instanceMatrix[3].xyz;
         #else
-          vec3 ip = (modelMatrix * vec4(0., 0., 0., 1.)).xyz;
+          vec3 ip = (modelMatrix * vec4(position.x, 0., position.z, 1.)).xyz;
         #endif
         float sw = sin(swayTime * 1.7 + ip.x * .35 + ip.z * .27) + .4 * sin(swayTime * 3.1 + ip.z * .6 + ip.x * .2);
         float lift = max(0., position.y - ${base.toFixed(2)});
@@ -198,40 +210,32 @@ export function createEnvironment(parent, state, water) {
       edge = Math.max(0, 1 - Math.pow(Math.abs(xx) / (w * 0.5), 2));
     return -0.25 + Math.pow(edge, 0.7) * (h + Math.sin(xx * 0.25 + zz * 0.18) * h * 0.22 + Math.sin(zz * 0.47) * 0.2);
   }
-  const treePositions = [];
-  for (let i = 0; i < 44; i++) {
-    const side = i % 2 ? -1 : 1;
-    treePositions.push([
-      side * (12 + Math.random() * 17),
-      1.7 + Math.random(),
-      -35 + Math.random() * 55,
-      3.5 + Math.random() * 5,
-    ]);
+  // Banks of broadleaf trees mixed with conifers; a few shared variants are instanced so
+  // the whole wood stays a handful of draw calls.
+  const foliage = addSway(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.88}), 0.025, 1.4),
+    matrix = new T.Object3D(),
+    treeKinds = [0, 1, 2, 3, 4].map(k => broadleafGeometry(k + 1)).concat([0, 1, 2].map(k => pineGeometry(k + 11))),
+    placements = treeKinds.map(() => []);
+  for (let i = 0; i < 48; i++) {
+    const side = i % 2 ? -1 : 1,
+      x = side * (12 + Math.random() * 17),
+      z = -35 + Math.random() * 55,
+      kind = Math.random() < 0.3 ? 5 + (i % 3) : i % 5;
+    placements[kind].push([x, ground(x, z) - 0.05, z, 0.85 + Math.random() * 0.45, Math.random() * TAU]);
   }
-  const trunks = new T.InstancedMesh(cyl, mat('#6b5b46'), treePositions.length),
-    canopy = new T.InstancedMesh(sphere, addSway(mat('#ffffff'), 0.035, -1), treePositions.length * 9),
-    matrix = new T.Object3D();
-  fresh.add(trunks, canopy);
-  let leaf = 0;
-  for (let i = 0; i < treePositions.length; i++) {
-    const [x, y, z, h] = treePositions[i];
-    matrix.position.set(x, y + h * 0.36, z);
-    matrix.scale.set(0.2, h * 0.72, 0.2);
-    matrix.rotation.set(0, 0, (Math.random() - 0.5) * 0.08);
-    matrix.updateMatrix();
-    trunks.setMatrixAt(i, matrix.matrix);
-    for (let j = 0; j < 9; j++) {
-      const a = j * 2.4,
-        r = (j % 3) * 0.6;
-      matrix.position.set(x + Math.sin(a) * r, y + h * 0.72 + (j % 3) * 0.65, z + Math.cos(a) * r);
-      matrix.scale.set(1.5 + (j % 2) * 0.4, 1.3, 1.5);
-      matrix.rotation.set(0.2 * a, 0.3 * a, 0.15 * a);
+  treeKinds.forEach((geo, k) => {
+    if (!placements[k].length) return;
+    const trees = new T.InstancedMesh(geo, foliage, placements[k].length);
+    placements[k].forEach(([x, y, z, sc, rot], i) => {
+      matrix.position.set(x, y, z);
+      matrix.rotation.set(0, rot, 0);
+      matrix.scale.setScalar(sc);
       matrix.updateMatrix();
-      canopy.setMatrixAt(leaf, matrix.matrix);
-      canopy.setColorAt(leaf, new T.Color(['#41694e', '#527b57', '#365d48'][j % 3]));
-      leaf++;
-    }
-  }
+      trees.setMatrixAt(i, matrix.matrix);
+    });
+    trees.computeBoundingSphere();
+    fresh.add(trees);
+  });
   const grassGeo = new T.PlaneGeometry(0.09, 0.8, 1, 3);
   grassGeo.translate(0, 0.4, 0);
   const grass = new T.InstancedMesh(grassGeo, addSway(mat('#80916a', {side: T.DoubleSide}), 0.16), 1800);
@@ -251,31 +255,38 @@ export function createEnvironment(parent, state, water) {
     matrix.updateMatrix();
     grass.setMatrixAt(i, matrix.matrix);
   }
-  for (let i = 0; i < 38; i++) {
-    const side = i % 2 ? -1 : 1;
-    const stone = mesh(
-      new T.DodecahedronGeometry(1, 2),
-      mat(['#849083', '#75877d', '#8b9181'][i % 3]),
-      [side * (7 + Math.random() * 9), 0.15, -28 + Math.random() * 41],
-      [0.4 + Math.random() * 0.9, 0.3 + Math.random() * 0.6, 0.4 + Math.random() * 0.8],
-    );
-    stone.rotation.set(Math.random(), Math.random(), Math.random());
+  // Shoreline boulders: weathered, mossy on top, settled into the ground.
+  const stoneMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}),
+    stoneKinds = [1, 2, 3, 4].map(k => rockGeometry(k)),
+    stonePlacements = stoneKinds.map(() => []);
+  for (let i = 0; i < 40; i++) {
+    const side = i % 2 ? -1 : 1,
+      x = side * (7 + Math.random() * 9),
+      z = -28 + Math.random() * 41;
+    stonePlacements[i % 4].push([x, Math.max(ground(x, z), -0.15), z, 0.35 + Math.random() * 0.8]);
   }
+  stoneKinds.forEach((geo, k) => {
+    const stones = new T.InstancedMesh(geo, stoneMat, stonePlacements[k].length);
+    stonePlacements[k].forEach(([x, y, z, sc], i) => {
+      matrix.position.set(x, y + sc * 0.12, z);
+      matrix.rotation.set(0, Math.random() * TAU, 0);
+      matrix.scale.set(sc * (1 + Math.random() * 0.4), sc * (0.6 + Math.random() * 0.4), sc);
+      matrix.updateMatrix();
+      stones.setMatrixAt(i, matrix.matrix);
+    });
+    stones.computeBoundingSphere();
+    fresh.add(stones);
+  });
   const glowMat = mat('#f7dcad', {emissive: '#e8b674', emissiveIntensity: 0.2});
-  function house(x, z, scale = 1, par = fresh) {
-    const h = new T.Group();
-    h.position.set(x, par === fresh ? ground(x, z) : 2, z);
-    h.scale.setScalar(scale);
-    par.add(h);
-    mesh(box, mat('#b4ae93'), [0, 1.5, 0], [3.5, 3, 3], h);
-    const roof = mesh(new T.ConeGeometry(1, 1, 4), mat('#5c6860'), [0, 3.4, 0], [3, 1.5, 2.7], h);
-    roof.rotation.y = Math.PI / 4;
-    for (const xx of [-0.9, 0.9]) mesh(box, glowMat, [xx, 1.6, 1.515], [0.65, 0.85, 0.04], h);
-    mesh(box, mat('#657764'), [0, 0.9, 1.52], [0.6, 1.8, 0.05], h);
-    mesh(cyl, mat('#5d7065'), [1, 3.7, -0.6], [0.22, 1.5, 0.22], h);
-    return h;
+  for (let i = 0; i < 6; i++) {
+    const x = 16 + i * 4.3,
+      z = -29 - (i % 2) * 5,
+      h = cottage(i + 1, glowMat);
+    h.position.set(x, ground(x, z) - 0.1, z);
+    h.scale.setScalar(0.62 + Math.random() * 0.25);
+    h.rotation.y = (Math.random() - 0.5) * 0.3;
+    fresh.add(h);
   }
-  for (let i = 0; i < 6; i++) house(16 + i * 4.3, -29 - (i % 2) * 5, 0.65 + Math.random() * 0.3);
   const roadGeo = new T.PlaneGeometry(28, 2.3, 48, 1);
   roadGeo.rotateX(-Math.PI / 2);
   const roadVertices = roadGeo.attributes.position;
@@ -285,63 +296,31 @@ export function createEnvironment(parent, state, water) {
   const road = mesh(roadGeo, mat('#646c64'), [25, 0, -21], [1, 1, 1]);
   const cars = [];
   for (let i = 0; i < 4; i++) {
-    const car = new T.Group();
-    fresh.add(car);
-    mesh(box, mat(['#a4b8b0', '#bca187', '#788c9d', '#c8c1ad'][i]), [0, 0.5, 0], [1.4, 0.55, 0.7], car);
-    mesh(box, mat('#829c9e', {metalness: 0.35, roughness: 0.25}), [0, 0.9, 0], [0.75, 0.4, 0.64], car);
-    for (const x of [-0.45, 0.45])
-      for (const z of [-0.36, 0.36]) {
-        const wheel = mesh(cyl, mat('#35413e'), [x, 0.26, z], [0.18, 0.09, 0.18], car);
-        wheel.rotation.x = Math.PI / 2;
-      }
-    cars.push(car);
+    const c = carModel(i + 1);
+    fresh.add(c);
+    cars.push(c);
   }
   const walkers = [];
   for (let i = 0; i < 12; i++) {
-    const person = new T.Group();
-    fresh.add(person);
-    mesh(sphere, mat(['#a58b78', '#9cafa0', '#8f9da9'][i % 3]), [0, 0.55, 0], [0.15, 0.3, 0.13], person);
-    mesh(sphere, mat('#c5a788'), [0, 0.97, 0], [0.12, 0.14, 0.12], person);
-    for (const x of [-0.07, 0.07]) mesh(cyl, mat('#5d706a'), [x, 0.2, 0], [0.045, 0.45, 0.045], person);
-    walkers.push(person);
+    const w = walkerModel(i + 1);
+    fresh.add(w);
+    walkers.push(w);
   }
   // Coastal land, palms, and a small living waterfront.
   terrain(-42, -63, 46, 42, 4, '#b5b28b', salt);
   terrain(44, -89, 45, 35, 5, '#a1a985', salt);
+  const palmMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.8, side: T.DoubleSide});
+  addSway(palmMat, 0.03, 3);
   for (let i = 0; i < 11; i++) {
-    const x = -53 + i * 2.3,
-      z = -64 + (i % 3) * 3,
-      h = 4 + (i % 4);
-    const palm = new T.Group();
-    palm.position.set(x, 2, z);
-    salt.add(palm);
-    mesh(cyl, mat('#9a8e69'), [0, h * 0.5, 0], [0.12, h, 0.12], palm);
-    for (let j = 0; j < 7; j++) {
-      const shape = new T.Shape();
-      shape.moveTo(0, 0);
-      shape.bezierCurveTo(0.4, 1.1, 0.3, 2.4, 0, 3);
-      shape.bezierCurveTo(-0.3, 2.3, -0.4, 0.7, 0, 0);
-      const frond = mesh(
-        new T.ShapeGeometry(shape, 15),
-        mat('#68896a', {side: T.DoubleSide}),
-        [0, h, 0],
-        [1, 1, 1],
-        palm,
-      );
-      frond.rotation.set(1.0, (j * TAU) / 7, j * 0.1);
-    }
+    const p = new T.Mesh(palmGeometry(i + 3), palmMat);
+    p.position.set(-53 + i * 2.3, 2, -64 + (i % 3) * 3);
+    p.rotation.y = i * 1.3;
+    salt.add(p);
   }
   for (let i = 0; i < 14; i++) {
-    const height = 3 + (i % 5) * 1.9;
-    mesh(
-      box,
-      mat(i % 2 ? '#b5bbaf' : '#96aca9'),
-      [-35 + i * 3.3, height * 0.5 + 1, -79 - (i % 3) * 3],
-      [2.2, height, 2.6],
-      salt,
-    );
-    for (let j = 0; j < Math.floor(height); j++)
-      mesh(box, glowMat, [-35 + i * 3.3, j + 1.7, -77.65 - (i % 3) * 3], [1.5, 0.35, 0.035], salt);
+    const b = harborBuilding(i + 1, glowMat);
+    b.position.set(-35 + i * 3.3, 1, -79 - (i % 3) * 3);
+    salt.add(b);
   }
   // Lofted skiff hull: transom stern, rising sheer to a pointed bow, painted bottom and
   // a boot stripe at the waterline, with gunwales, floorboards and thwarts inside.
@@ -425,15 +404,24 @@ export function createEnvironment(parent, state, water) {
     const b = boat(0.5 + i * 0.1, i % 2);
     common.add(b);
     if (i % 2 === 0) {
-      mesh(cyl, mat('#a8b4a6'), [0, 1.5, 0], [0.035, 3, 0.035], b);
-      const sailGeo = new T.BufferGeometry().setFromPoints([
-        new T.Vector3(0.08, 2.8, 0),
-        new T.Vector3(0.08, 0.45, 0),
-        new T.Vector3(1.3, 0.45, 0),
-      ]);
-      sailGeo.setIndex([0, 1, 2]);
-      sailGeo.computeVertexNormals();
-      mesh(sailGeo, mat('#e3dec9', {side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], b);
+      mesh(cyl, mat('#a8b4a6'), [0, 1.6, 0], [0.035, 3.2, 0.035], b);
+      mesh(cyl, mat('#a8b4a6'), [0.65, 0.62, 0], [0.025, 1.3, 0.025], b).rotation.z = Math.PI / 2;
+      // Mainsail and jib as gently billowing curved panels.
+      // pts: [head, tack, clew]; the panel narrows from the foot to the head.
+      const sail = ([head, tack, clew], belly) => {
+        const geo = new T.PlaneGeometry(1, 1, 8, 8),
+          p = geo.attributes.position;
+        for (let k = 0; k < p.count; k++) {
+          const u = p.getX(k) + 0.5,
+            v = p.getY(k) + 0.5,
+            w = 1 - v;
+          p.setXYZ(k, tack[0] + (clew[0] - tack[0]) * u * w, tack[1] + (head[1] - tack[1]) * v, Math.sin(u * Math.PI) * belly * w);
+        }
+        geo.computeVertexNormals();
+        return geo;
+      };
+      mesh(sail([[0.06, 3.1], [0.06, 0.65], [1.3, 0.65]], 0.25), mat('#ece6d2', {side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], b);
+      mesh(sail([[-0.06, 2.6], [-0.06, 0.7], [-1.2, 0.7]], 0.18), mat('#e3dcc6', {side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], b);
     }
     fleet.push(b);
   }
@@ -447,11 +435,18 @@ export function createEnvironment(parent, state, water) {
   titleShore.visible = false;
   common.add(titleShore);
   terrain(17, 23, 18, 22, 1.4, '#b5ae8e', titleShore);
+  const shoreRocks = new T.InstancedMesh(rockGeometry(21, false, ['#9d9a84', '#b3ae96']), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}), 18);
   for (let i = 0; i < 18; i++) {
-    const x = 11 + (i % 6) * 1.4,
-      z = 18 + Math.floor(i / 6) * 2;
-    mesh(new T.SphereGeometry(1, 12, 8), mat('#aaa78d'), [x, 0.5, z], [0.2, 0.14, 0.3], titleShore);
+    const x = 11 + (i % 6) * 1.4 + Math.sin(i * 3.1) * 0.4,
+      z = 18 + Math.floor(i / 6) * 2 + Math.cos(i * 2.3) * 0.5;
+    matrix.position.set(x, 0.45, z);
+    matrix.rotation.set(0, i * 1.7, 0);
+    matrix.scale.set(0.25 + (i % 3) * 0.08, 0.16, 0.3);
+    matrix.updateMatrix();
+    shoreRocks.setMatrixAt(i, matrix.matrix);
   }
+  shoreRocks.computeBoundingSphere();
+  titleShore.add(shoreRocks);
   const rainGeo = new T.BufferGeometry(),
     rainPos = [];
   for (let i = 0; i < 500; i++)
@@ -467,8 +462,8 @@ export function createEnvironment(parent, state, water) {
   common.add(sun);
   const birds = [];
   for (let i = 0; i < 7; i++) {
-    const pts = [new T.Vector3(-0.2, 0, 0), new T.Vector3(0, 0.09, 0), new T.Vector3(0.2, 0, 0)];
-    const bird = new T.Line(new T.BufferGeometry().setFromPoints(pts), new T.LineBasicMaterial({color: '#bcc9bb'}));
+    const bird = gull(i + 1);
+    bird.scale.setScalar(1.3);
     common.add(bird);
     birds.push(bird);
   }
@@ -483,16 +478,21 @@ export function createEnvironment(parent, state, water) {
         const phase = (t * 0.55 + i * 7) % 28;
         const carX = i % 2 ? 39 - phase : 11 + phase,
           carZ = -21 + (i % 2 ? 0.45 : -0.45);
-        cars[i].position.set(carX, ground(carX, carZ) + 0.08, carZ);
+        cars[i].position.set(carX, ground(carX, carZ) + 0.02, carZ);
         cars[i].rotation.y = i % 2 ? Math.PI : 0;
+        for (const w of cars[i].userData.wheels) w.rotation.z = -t * 0.55 * 7.7;
       }
       for (let i = 0; i < walkers.length; i++) {
         const px = 13 + ((t * 0.15 + i * 2.3) % 27),
           pz = -19.3 + (i % 3) * 0.25;
-        walkers[i].position.set(px, ground(px, pz) + 0.04, pz);
-        walkers[i].rotation.z = Math.sin(t * 3 + i) * 0.015;
-        walkers[i].children[2].rotation.x = Math.sin(t * 3 + i) * 0.4;
-        walkers[i].children[3].rotation.x = -Math.sin(t * 3 + i) * 0.4;
+        const w = walkers[i],
+          stride = Math.sin(t * 4.2 * w.userData.pace + i);
+        w.position.set(px, ground(px, pz) + 0.02 + Math.abs(stride) * 0.02, pz);
+        w.rotation.y = Math.PI / 2;
+        w.userData.legs[0].rotation.x = stride * 0.45;
+        w.userData.legs[1].rotation.x = -stride * 0.45;
+        w.userData.arms[0].rotation.x = -stride * 0.35;
+        w.userData.arms[1].rotation.x = stride * 0.35;
       }
       for (let i = 0; i < fleet.length; i++) {
         const b = fleet[i];
@@ -543,8 +543,11 @@ export function createEnvironment(parent, state, water) {
       sun.position.set(Math.cos(angle) * 65, Math.sin(angle) * 55 + 8, -95);
       sun.visible = c.phase !== 'night';
       for (let i = 0; i < birds.length; i++) {
-        birds[i].position.set(Math.sin(t * 0.04 + i) * 35, 10 + (i % 3), -35 - i * 2);
-        birds[i].scale.y = 0.8 + Math.sin(t * 4 + i) * 0.4;
+        const a = t * 0.04 + i,
+          heading = Math.cos(a) > 0 ? 1 : -1;
+        birds[i].position.set(Math.sin(a) * 35, 10 + (i % 3) + Math.sin(t * 0.7 + i) * 0.4, -35 - i * 2 + Math.sin(t * 0.3 + i) * 2);
+        birds[i].rotation.set(0, (heading * Math.PI) / 2, -heading * Math.sin(a) * 0.25);
+        flapGull(birds[i], t);
       }
     },
     setTitle(on) {

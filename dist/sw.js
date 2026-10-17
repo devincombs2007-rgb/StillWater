@@ -6,7 +6,7 @@ const ASSETS = [
   './game.js?v=7',
   './art.js?v=7',
   './surface.js?v=7',
-  './textures.js?v=7','./models.js?v=7',
+  './textures.js?v=7','./models.js?v=7','./scenery.js?v=7',
   './fishing.js?v=7',
   './angler.js?v=7',
   './tackle.js?v=7',
