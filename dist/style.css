@@ -611,6 +611,10 @@ nav svg {
   height: 78px;
   filter: drop-shadow(0 7px 6px #041c2344);
 }
+img.fish-art {
+  display: block;
+  object-fit: contain;
+}
 .fish-card h3 {
   font:
     16px Georgia,

@@ -97,3 +97,77 @@ export function showPreview(container, species) {
     return false;
   }
 }
+// Small still renders of the real 3D fish for journal and resident cards. Rendered once
+// per species (and once as a silhouette for undiscovered ones), queued so a full journal
+// fills in progressively instead of stalling the UI.
+let thumbRenderer = null,
+  thumbScene,
+  thumbCamera,
+  silhouette;
+const thumbs = new Map(),
+  queue = [];
+let pumping = false;
+function setupThumbs() {
+  thumbRenderer = new T.WebGLRenderer({antialias: true, alpha: true, preserveDrawingBuffer: true, powerPreference: 'low-power'});
+  thumbRenderer.setPixelRatio(1);
+  thumbRenderer.setSize(320, 180);
+  thumbRenderer.outputColorSpace = T.SRGBColorSpace;
+  thumbRenderer.toneMapping = T.ACESFilmicToneMapping;
+  thumbRenderer.setClearColor(0x000000, 0);
+  thumbScene = new T.Scene();
+  thumbScene.add(new T.HemisphereLight('#d6ebe1', '#466760', 2.6));
+  const key = new T.DirectionalLight('#ffe8bf', 2.6);
+  key.position.set(-2, 4, 5);
+  thumbScene.add(key);
+  const rim = new T.DirectionalLight('#a0d7e8', 1.8);
+  rim.position.set(1, 2, -5);
+  thumbScene.add(rim);
+  thumbCamera = new T.PerspectiveCamera(30, 16 / 9, 0.1, 50);
+  silhouette = new T.MeshBasicMaterial({color: '#5f7a74', transparent: true, opacity: 0.85});
+}
+function renderThumb(species, unknown) {
+  if (!thumbRenderer) setupThumbs();
+  const fish = createFish(species);
+  fish.rotation.set(0.08, -0.35, 0.04);
+  animateFish(fish, 0.8, 0.6);
+  thumbScene.add(fish);
+  const box = new T.Box3().setFromObject(fish),
+    size = box.getSize(new T.Vector3()),
+    center = box.getCenter(new T.Vector3());
+  fish.position.sub(center);
+  const distance = (Math.max(size.y * 1.15, size.x / thumbCamera.aspect) / (2 * Math.tan((30 * Math.PI) / 360))) * 1.12;
+  thumbCamera.position.set(0, 0.05, distance);
+  thumbCamera.lookAt(0, 0, 0);
+  thumbScene.overrideMaterial = unknown ? silhouette : null;
+  thumbRenderer.render(thumbScene, thumbCamera);
+  const url = thumbRenderer.domElement.toDataURL('image/png');
+  thumbScene.remove(fish);
+  disposeFish(fish);
+  return url;
+}
+function pump() {
+  pumping = true;
+  const job = queue.shift();
+  if (!job) {
+    pumping = false;
+    return;
+  }
+  try {
+    job.resolve(renderThumb(job.species, job.unknown));
+  } catch {
+    job.resolve(null);
+  }
+  setTimeout(pump, 0);
+}
+export function fishThumbnail(species, unknown = false) {
+  const key = species.id + (unknown ? ':?' : '');
+  if (!thumbs.has(key))
+    thumbs.set(
+      key,
+      new Promise(resolve => {
+        queue.push({species, unknown, resolve});
+        if (!pumping) setTimeout(pump, 0);
+      }),
+    );
+  return thumbs.get(key);
+}

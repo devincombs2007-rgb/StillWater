@@ -47,6 +47,7 @@ import {
 import {createWorld} from './scene.js?v=7';
 import {createAudio} from './audio.js?v=7';
 import {showPreview, stopPreview} from './preview.js?v=7';
+import {fishThumbnail} from './preview.js?v=7';
 import {fishSvg} from './art.js?v=7';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
@@ -699,7 +700,7 @@ function journal(residents = false) {
     .map(({f, r}) => {
       const known = !!r || state.found.includes(f.id),
         age = r ? growth(r) : 1;
-      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}">${fishSvg(f, !known)}<h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}</div><div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? (state.records[f.id]?.best ? '<br>Best ' + state.records[f.id].best.toFixed(1) + ' cm' : '<br>Not yet landed') : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet & nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : ''}</article>`;
+      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}"><div class="fish-thumb" data-thumb="${f.id}" data-unknown="${known ? 0 : 1}">${fishSvg(f, !known)}</div><h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}</div><div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? (state.records[f.id]?.best ? '<br>Best ' + state.records[f.id].best.toFixed(1) + ' cm' : '<br>Not yet landed') : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet & nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : ''}</article>`;
     })
     .join('')}</div>`;
 }
@@ -806,7 +807,20 @@ function closePanel(force = false) {
   world?.select?.(null);
   focusBefore?.focus?.({preventScroll: true});
 }
+// Swap each card's drawing for a still render of the real 3D fish once it is ready.
+function hydrateThumbs() {
+  for (const el of all('[data-thumb]')) {
+    const species = SPECIES.find(f => f.id === el.dataset.thumb);
+    if (!species) continue;
+    fishThumbnail(species, el.dataset.unknown === '1')
+      .then(url => {
+        if (url && el.isConnected !== false) el.innerHTML = `<img class="fish-art" alt="" src="${url}">`;
+      })
+      .catch(() => {});
+  }
+}
 function bindPanel() {
+  if (panelType === 'journal' || panelType === 'residents') hydrateThumbs();
   if (panelType === 'extras') $('#extra-back').onclick = () => closePanel();
   if (panelType === 'newgame') {
     $('#cancel-new').onclick = () => closePanel();
