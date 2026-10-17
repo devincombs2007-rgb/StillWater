@@ -60,11 +60,13 @@ for (const name of names) {
     obj = scenery[name](Number(q.get('seed') || 1));
     root.add(obj);
   } else continue;
+  root.updateMatrixWorld(true);
   const box = new T.Box3().setFromObject(obj),
     size = box.getSize(new T.Vector3());
   obj.position.x += x - box.min.x;
   x += size.x * 1.15;
 }
+root.updateMatrixWorld(true);
 const box = new T.Box3().setFromObject(root),
   size = box.getSize(new T.Vector3()),
   center = box.getCenter(new T.Vector3());
