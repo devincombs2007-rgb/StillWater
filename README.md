@@ -1,10 +1,10 @@
-# Stillwater — The Bait Shop
+# Stillwater — The Living Water
 
-A touch-friendly 3D fishing and aquarium game. Version 1.4 uses static HTML, CSS, JavaScript, and vendored Three.js, with no build step or external runtime requests.
+A touch-friendly 3D fishing and aquarium game. Version 1.5 uses static HTML, CSS, JavaScript, and vendored Three.js, with no build step or external runtime requests.
 
 ## Play
 
-Create a permanent angler, then hold and release **Cast a line**. Watch the bobber, tap a bite before it disappears, and time reel pulls inside the glowing window. Common fish have a wide, slow window; the window progressively shrinks and the marker accelerates through legendary. Pulls bring the bobber closer. Poor timing, slack, excessive tension, worn rods, and inadequate tackle can lose a fish or break equipment. Some casts receive no bite. Bait is a permanent reusable lure unlock; it is never consumed. Existing stocks and the currently equipped bait migrate to owned lures. Bait improves bite and rarity chances, and survives rebirth.
+Create a permanent angler, then hold and release **Cast a line**. Watch the float: small twitches are curious fish, a hard plunge is a bite. Tap before it disappears (once the line is out, a tap anywhere on the scene counts), and time reel pulls inside the glowing window. Common fish have a wide, slow window; the window progressively shrinks and the marker accelerates through legendary. Pulls bring the bobber closer. Poor timing, slack, excessive tension, worn rods, and inadequate tackle can lose a fish or break equipment. Some casts receive no bite. Bait is a permanent reusable lure unlock; it is never consumed. Existing stocks and the currently equipped bait migrate to owned lures. Bait improves bite and rarity chances, and survives rebirth.
 
 Switch between first-person hands and an orbit camera around the stationary angler. Landing moves smoothly to a front view with a swinging catch. Drag to inspect it, review its weight, potential, and discovery status, then release it for pearls or keep it. Keeping transitions to the aquarium, where the fish drops into the water and residents scatter from the splash.
 
@@ -16,7 +16,7 @@ Rebirth requires 100 catches in the current journey, Reef access, and 25,000 pea
 
 ## Touch, installation, and sound
 
-The game surface disables selection, dragging, and long-press callouts while preserving editable name fields. Pointer releases are handled directly, with synthetic duplicate clicks suppressed. Keyboard: hold Space or Enter to cast, then tap to hook and reel.
+The game surface disables selection, dragging, and long-press callouts while preserving editable name fields. Pointer releases are handled directly, with synthetic duplicate clicks suppressed. Keyboard: hold Space or Enter to cast, then tap to hook and reel; 1–4 switch views and C swaps the camera. Options can turn vibration off on devices that support it.
 
 The home-screen edition includes standalone Apple metadata, a web app manifest, PNG icons, safe-area layout, and a versioned offline shell. The help panel explains installation and reports offline readiness. Open online after an update, then close and reopen the installed app. Do not clear browser data to update: saves live on the device.
 
@@ -28,11 +28,11 @@ The existing local storage key is retained. Version-1 and version-2 saves migrat
 
 ## Implementation and validation
 
-The line uses a constrained Verlet rope, ballistic casts, spring-driven retrieval, and a pendulum catch. A damped finite-difference height field propagates aquarium waves and reflects them at the walls. Fresh/ocean waves and splash ripples drive visible water and tackle; boats sample four hull positions for damped heave/pitch/roll. The angler follows the hull. Catch rarity appears as a subtle emissive tint and a translucent halo, preserving body detail. Nearby rod, cork, clothing, dock and boat surfaces use generated detail textures. These are lightweight game simulations rather than a full fluid or hydrodynamics solver. Fish feeding and scattering use acceleration-limited steering instead of position jumps.
+The line uses a constrained Verlet rope drawn as a screen-width ribbon, ballistic casts with light drag, a spring-buoyant float that sits in the water and plunges on bites, a hooked fish that drags and thrashes against the line, spring-driven retrieval, and a pendulum catch hanging from the rod tip. A damped finite-difference height field propagates aquarium waves and reflects them at the walls. Fresh/ocean waves and splash ripples drive visible water and tackle; boats sample four hull positions that drive a damped spring-mass model for heave, pitch and roll (with inertia and overshoot), and a fighting fish heels the skiff. The angler follows the hull. A time-of-day sky with sun halo and clouds drives the lights, fog, mountain haze and water reflections; the water adds sun glints, ripple detail, rain rings, shallows and shore foam. Grass, trees and reeds sway in the wind and fish rise and leap in the lake. Catch rarity appears as a subtle emissive tint and a translucent halo, preserving body detail. Nearby rod, cork, clothing, dock and boat surfaces use generated detail textures. These are lightweight game simulations rather than a full fluid or hydrodynamics solver. Fish feeding and scattering use acceleration-limited steering instead of position jumps.
 
-`npm test` runs eight test files covering economy and legacy saves; probabilistic encounters and gear failures; DOM-stub touch gameplay, market, and rebirth flows; offline/auth-safe caching; tackle and wave physics; scene construction, camera framing and arrivals with a WebGL renderer stub; animated models plus bounded swimming for all 60 species; and gesture-gated sound graphs, shop greetings, mute and pause behavior. All eight pass. Procedural character poses were additionally inspected using an offline software mesh render.
+`npm test` runs eight test files covering economy and legacy saves; probabilistic encounters and gear failures; DOM-stub touch gameplay, market, and rebirth flows; offline/auth-safe caching; tackle and wave physics; scene construction, camera framing and arrivals with a WebGL renderer stub; animated models plus bounded swimming for all 60 species; and gesture-gated sound graphs, shop greetings, mute and pause behavior. All eight pass. Version 1.5 was also played end to end in headless Chromium (SwiftShader WebGL) at phone (390×844) and desktop (1280×800) sizes: title, character creation, casting, bites, fights, catches, aquarium, shop, journal and options, across lake and ocean regions and times of day.
 
-These checks do not verify actual browser GPU rendering, iPhone touch behavior, audio output, or final on-device layout. Browser QA was unavailable in the build environment. Serve `dist` with a static web server; `.openai/hosting.json` points to this directory.
+These checks still do not verify iPhone Safari, real GPU performance or thermals, touch feel, or audio output; software-rendered screenshots are not a substitute for on-device testing. Serve `dist` with a static web server; `.openai/hosting.json` points to this directory.
 
 ## Credits
 

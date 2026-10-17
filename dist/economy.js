@@ -906,6 +906,7 @@ export function freshState(now = Date.now()) {
     lifetimeEarned: 0,
     cameraMode: 'third',
     seenHelp: false,
+    haptics: true,
     audioOn: true,
     volume: 0.3,
   };
@@ -949,6 +950,7 @@ export function sanitize(raw, now = Date.now()) {
   const n = (v, d = 0) => (Number.isFinite(v) && v >= 0 ? v : d);
   s.version = 3;
   s.audioOn = s.audioOn !== false;
+  s.haptics = s.haptics !== false;
   s.volume = Number.isFinite(s.volume) ? Math.max(0, Math.min(0.6, s.volume)) : 0.3;
   for (const k of ['pearls', 'bank', 'total', 'attempts', 'lifetimeEarned']) s[k] = n(s[k], k === 'pearls' ? 60 : 0);
   for (const [k, max] of [
@@ -1200,6 +1202,7 @@ export function rebirth(s) {
   if (!canRebirth(s)) return false;
   const keep = {
     audioOn: s.audioOn,
+    haptics: s.haptics,
     volume: s.volume,
     ownedBaits: s.ownedBaits,
     bait: s.bait,

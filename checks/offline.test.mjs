@@ -8,10 +8,10 @@ const caches={async open(name){if(!stores.has(name))stores.set(name,new Map());c
 function response(url,html=false){return {url:authRedirect?'https://auth.test/login':url,ok:true,redirected:authRedirect,clone(){return this;},async text(){return html?'<meta name="stillwater-build" content="3">':'game asset';}};}
 const context={self:{location:new URL('https://game.test/sw.js'),clients:{async claim(){claimed=true;}},async skipWaiting(){},addEventListener(n,f){listeners[n]=f;}},caches,Request,Response,URL,fetch:async r=>{if(!network)throw Error('offline');const url=key(r);return response(url,new URL(url).pathname==='/'||url.includes('index.html'));}};
 vm.runInNewContext(src,context);
-let waiting;listeners.install({waitUntil(p){waiting=p;}});await waiting;assert.ok(stores.get('stillwater-pocket-v5').size>=16);
+let waiting;listeners.install({waitUntil(p){waiting=p;}});await waiting;assert.ok(stores.get('stillwater-pocket-v6').size>=16);
 stores.set('stillwater-pocket-old',new Map());stores.set('other-app-cache',new Map());listeners.activate({waitUntil(p){waiting=p;}});await waiting;assert.equal(claimed,true);assert.ok(!stores.has('stillwater-pocket-old'));assert.ok(stores.has('other-app-cache'));
 network=false;let result;listeners.fetch({request:{method:'GET',mode:'navigate',url:'https://game.test/?app=1'},respondWith(p){result=p;}});assert.match(await (await result).text(),/stillwater-build/);
-result=null;listeners.fetch({request:{method:'GET',mode:'cors',url:'https://game.test/game.js?v=5'},respondWith(p){result=p;}});assert.equal((await result).url,'https://game.test/game.js?v=5');
+result=null;listeners.fetch({request:{method:'GET',mode:'cors',url:'https://game.test/game.js?v=6'},respondWith(p){result=p;}});assert.equal((await result).url,'https://game.test/game.js?v=6');
 result=null;listeners.fetch({request:{method:'GET',mode:'navigate',url:'https://game.test/oauth/login'},respondWith(p){result=p;}});assert.equal(result,null,'authentication routes are never intercepted');
 network=true;authRedirect=true;listeners.install({waitUntil(p){waiting=p;}});await assert.rejects(waiting,/safely/);
 const manifest=JSON.parse(await readFile(new URL('../dist/manifest.webmanifest',import.meta.url)));assert.equal(manifest.display,'standalone');for(const icon of manifest.icons)assert.ok((await readFile(new URL('../dist/'+icon.src,import.meta.url))).length>1000);

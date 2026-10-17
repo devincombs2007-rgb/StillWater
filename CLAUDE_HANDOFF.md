@@ -1,6 +1,6 @@
 # Stillwater — Claude continuation handoff
 
-Prepared for Devin Combs, 17 October 2026. Clean development cut: **v1.4.0, “The Bait Shop.”** The source archive includes `SOURCE_COMMIT.txt` with the exact published commit. No work should be inferred from an earlier chat summary when the files disagree.
+Prepared for Devin Combs, 17 October 2026. Current development cut: **v1.5.0, “The Living Water”** (Claude, on top of the published v1.4.0 “The Bait Shop”; `SOURCE_COMMIT.txt` still names the v1.4 published commit). v1.5 is in this repository but **has not been published to the live Site**. No work should be inferred from an earlier chat summary when the files disagree.
 
 ## Start here
 
@@ -15,6 +15,28 @@ There is no build step and no install is needed to serve the game. Tests require
 Live game: https://stillwater-sanctuary-dev.devincombs.chatgpt.site
 
 The live Site is owner-private. Its identity is in `.openai/hosting.json`. This archive does not provide hosting credentials or the player’s save. Claude can edit/run the supplied static source locally; publishing to the existing Site requires an authorized Sites-capable environment. A separate host is possible if Devin chooses one. Do not imply that opening the live URL grants repository or deployment access.
+
+## v1.5 “The Living Water” — what changed
+
+Bugs found by playing the game in headless Chromium and fixed:
+
+- **Float off-screen on phones.** The third-person camera looked across the lake at the left bank, so on portrait screens the cast landed outside the view. The camera now orbits the angler but aims down the cast and follows the float out.
+- **Starter gear could not land any uncommon fish.** Rarity added 0.8 power per tier, so every uncommon+ Willow Lake fish (~⅓ of bites) overpowered the willow rod/basic line. Rarity now adds 0.55, the willow rod is 1.8 and basic line 1.9. Overmatched fish are announced the moment they are hooked.
+- **Cast button jumped** ~30px when “Let it go” appeared, so a second tap in the same place missed the hook. The link now reserves its row.
+- **Aquarium fish balled up mid-tank.** Golden-angle phases × 1.31 ≈ π sent every fish to the same x goal. Fixed with a per-fish offset; `swimming.test.mjs` now asserts idle spread.
+- **Boats leaned against the waves** (pitch and roll signs inverted relative to three.js Euler rotations).
+- **Catch rig:** the line ran to a point in mid-air and the float covered the angler’s face. The fish now hangs from the real rod tip and the float hides while held. The float also no longer covers the face during character creation.
+- Field-notes “new” dot never showed; journal from the aquarium switched to lake ambience; the willow rod could be “repaired” for pearls although it never wears; lines teleported back to the rod after misses/escapes; region sky palettes were overwritten every frame; long panels scrolled past their headings when opened.
+
+Graphics: time-of-day sky with sun halo and drifting clouds driving lights, fog, mountain haze and water; new water shading (sky reflection, Fresnel, sun glints, ripple detail, rain rings, shallows and lapping foam at the banks, distance fog); lofted skiff hull with gunwales, floorboards and boot stripe; two-tone glossy float, sinker and hook; screen-width ribbon fishing line; wind sway on grass, canopies and reeds; spray particles; leaping/rising lake fish; aquarium light shafts.
+
+Physics: spring-buoyant float with waterline, nibbles and bite plunges; hooked fish dragging and thrashing; recall/snap behaviour; damped spring-mass hull dynamics (`createHullMotion` in `surface.js`, tested) with line tug heeling the skiff; pellets and surface-cruising fish ripple the tank.
+
+QoL: tap anywhere on the scene to hook/reel; 1–4 and C shortcuts; aquarium pearls dot; optional vibration (Options; iOS Safari ignores it); larger “Let it go” target; plain hook bite 48% → 56%; journal says “Not yet landed”; Battery mode skips heavy water detail.
+
+Sources were run through Prettier once (separate commit, no behaviour change) so they are readable; tests were adjusted only for formatting and for the new ribbon line. Save key and payload version 3 are unchanged (new optional `haptics` field). Module URLs, build marker and worker cache are now **v6**.
+
+Verified: all eight test files pass; end-to-end play in headless Chromium/SwiftShader at 390×844 and 1280×800 including lake/creek/cove/ocean regions and dawn/day/dusk/night, catch, aquarium, shop, journal and options with no console errors. **Not verified:** real iPhone Safari, GPU frame rate/thermals with the heavier water shader, touch feel, audio on hardware.
 
 ## Vision and tone
 
@@ -40,7 +62,7 @@ The stationary angler fishes by tapping/holding. There is no character locomotio
 - Procedural sounds for cast swish, actual bobber water contact, bite/reel/tension, snapping/escape, splash/feed, pearls, UI, and dripping held fish. Occasional freshwater daytime birds/traffic or coastal gulls/horns. Sound pauses in the background and can be muted; Options includes volume presets. Do not claim the sounds have been listened to on hardware.
 - Startup: black screen asks for a tap to unlock mobile audio, then ocean ambience, “Created by ChatGPT and Devin Combs,” and a fade to a 3D shore camera looking toward a fisherman/boat. Title menu: Stillwater, Continue, Start new, Options, Extra. Start new asks before replacing an existing character save. Options includes export/import, audio/volume and graphics. Extra credits and future-mode notes. Help can return to the title.
 - Generated neutral detail texture maps on rod/grip, clothing, dock and boat wood; added line guides and bobber trim. This is targeted material improvement, **not completion of the request for high-quality art on every model**.
-- iPhone standalone/PWA metadata, icons, safe areas, offline shell, input-exempt selection/callout suppression and pointer-based casting. Versioned module URLs and worker cache currently **v5**. Do not reuse v5 URLs for a later code change: update URLs, build marker, cache version, and offline tests together.
+- iPhone standalone/PWA metadata, icons, safe areas, offline shell, input-exempt selection/callout suppression and pointer-based casting. Versioned module URLs and worker cache currently **v6** (v1.5). Do not reuse v6 URLs for a later code change: update URLs, build marker, cache version, and offline tests together.
 
 ## Source map
 

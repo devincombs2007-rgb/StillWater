@@ -1,13 +1,13 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=5';
-import {makeSwimmer, stepSwimmer} from './swimming.js?v=5';
-import {createWater, createEnvironment, addSway} from './environment.js?v=5';
-import {createAngler} from './angler.js?v=5';
-import {createTackle} from './tackle.js?v=5';
-import {surfaceTexture, cloudTexture} from './textures.js?v=5';
-import {createTankSurface} from './surface.js?v=5';
-import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=5';
-import {worldConditions} from './fishing.js?v=5';
+import {createFish, animateFish, disposeFish} from './fish.js?v=6';
+import {makeSwimmer, stepSwimmer} from './swimming.js?v=6';
+import {createWater, createEnvironment, addSway} from './environment.js?v=6';
+import {createAngler} from './angler.js?v=6';
+import {createTackle} from './tackle.js?v=6';
+import {surfaceTexture, cloudTexture} from './textures.js?v=6';
+import {createTankSurface} from './surface.js?v=6';
+import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=6';
+import {worldConditions} from './fishing.js?v=6';
 const TAU = Math.PI * 2;
 // Sky keys across the 20-minute world day: [cycle, zenith, horizon, sun colour].
 const SKY = [
@@ -883,6 +883,7 @@ export function createWorld(canvas, state, onError) {
     if (view === 'lake') {
       waterSystem.update(clock, region, conditions);
       surroundings.update(dt, clock, region, conditions);
+      if (region >= 3 && castState === 'reeling') surroundings.tug(fightTension * 0.08 * dt);
       dock.visible = region < 3;
       lamp.visible = region < 3;
       for (const o of lake.children) if (o.userData.freshOnly) o.visible = region < 3;
@@ -1037,6 +1038,7 @@ export function createWorld(canvas, state, onError) {
         r.mesh.material.color.copy(r.base).multiplyScalar(rangeLight).lerp(gradient.uniforms.bottom.value, r.haze);
       scene.fog.color.copy(gradient.uniforms.bottom.value).multiplyScalar(0.78);
       const wu = waterSystem.uniforms;
+      wu.detail.value = state.quality === 'battery' ? 0 : 1;
       wu.skyTop.value.copy(gradient.uniforms.top.value);
       wu.skyHorizon.value.copy(gradient.uniforms.bottom.value);
       wu.sunDir.value.copy(lightDir);
@@ -1232,6 +1234,7 @@ export function createWorld(canvas, state, onError) {
       fightTension = tension;
       pullFlash = 1;
       tackle.pull(0.15);
+      if (region >= 3) surroundings.tug(0.025 + tension * 0.03);
       waterSystem.impulse(tackle.end.x, tackle.end.z, clock, 0.18);
     },
     setTension: n => {

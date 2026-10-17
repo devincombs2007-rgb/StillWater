@@ -1,5 +1,5 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=5';
+import {createFish, animateFish, disposeFish} from './fish.js?v=6';
 let renderer = null,
   scene,
   camera,

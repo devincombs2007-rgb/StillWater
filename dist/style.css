@@ -1780,7 +1780,8 @@ nav,
 }
 .let-go {
   display: block;
-  margin: 10px auto 0;
+  margin: 4px auto -6px;
+  padding: 6px 14px;
   text-align: center;
   font-size: 9px;
   color: #c2b9a5;

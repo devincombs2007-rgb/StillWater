@@ -1,7 +1,7 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture} from './textures.js?v=5';
-import {buoyancyPose, createHullMotion, hullTarget} from './surface.js?v=5';
-import {BOATS} from './economy.js?v=5';
+import {surfaceTexture} from './textures.js?v=6';
+import {buoyancyPose, createHullMotion, hullTarget} from './surface.js?v=6';
+import {BOATS} from './economy.js?v=6';
 const TAU = Math.PI * 2;
 // Shoreline banks shared by the scenery, grass and the water shader's shallows.
 const BANKS = [
@@ -37,6 +37,7 @@ export function createWater(parent) {
     fogColor: {value: new T.Color('#35575b')},
     fogDensity: {value: 0.0065},
     light: {value: 1},
+    detail: {value: 1},
   };
   const wave = `float height(vec2 p){float a=mix(.048,.22,ocean)*swell;
     float h=sin(p.x*.45+p.y*.68+time*.9)*a+sin(p.x*.71-p.y*.32+time*.7)*a*.55+sin(p.y*1.8+time*1.1)*.018
@@ -54,13 +55,13 @@ export function createWater(parent) {
         normalW=normalize(vec3(height(v.xz-vec2(e,0.))-height(v.xz+vec2(e,0.)),2.*e,height(v.xz-vec2(0.,e))-height(v.xz+vec2(0.,e))));
         p=v;gl_Position=projectionMatrix*modelViewMatrix*vec4(v,1.);}`,
     fragmentShader: `uniform float time;uniform float ocean;uniform float rain;uniform vec3 skyTop;uniform vec3 skyHorizon;uniform vec3 sunDir;uniform vec3 sunColor;
-      uniform vec3 fogColor;uniform float fogDensity;uniform float light;varying vec3 p;varying vec3 normalW;${bank}
+      uniform vec3 fogColor;uniform float fogDensity;uniform float light;uniform float detail;varying vec3 p;varying vec3 normalW;${bank}
       vec2 ripple(vec2 q,float t){return vec2(sin(q.x*3.1+q.y*1.3+t*1.9)+sin(q.x*5.7-q.y*4.1-t*2.7)*.5+sin(q.y*9.3+q.x*.7+t*3.9)*.25,
         cos(q.y*2.9-q.x*1.7+t*1.6)+cos(q.y*6.3+q.x*3.9-t*2.3)*.5+cos(q.x*8.7-q.y*1.1+t*4.3)*.25);}
       void main(){vec3 view=cameraPosition-p;float dist=length(view);view/=dist;
-        float detail=(.035+rain*.05)*(1.-smoothstep(12.,70.,dist));vec2 r=ripple(p.xz,time)*detail;
+        vec2 r=detail>.5?ripple(p.xz,time)*(.035+rain*.05)*(1.-smoothstep(12.,70.,dist)):vec2(0.);
         vec3 n=normalize(normalW+vec3(r.x,0.,r.y));
-        if(rain>.02&&dist<40.){vec2 g=p.xz*1.7;vec2 id=floor(g);vec2 c=fract(g)-.5;float h=fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453);
+        if(detail>.5&&rain>.02&&dist<40.){vec2 g=p.xz*1.7;vec2 id=floor(g);vec2 c=fract(g)-.5;float h=fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453);
           c-=(vec2(fract(h*7.13),fract(h*13.7))-.5)*.5;float ph=fract(time*.85+h);float d=length(c),rad=ph*.42;
           float ring=sin((d-rad)*70.)*smoothstep(.07,0.,abs(d-rad))*(1.-ph);n=normalize(n+vec3(c.x,0.,c.y)/max(d,.02)*ring*rain*.35*(1.-dist/40.));}
         float facing=max(0.,dot(view,n));float fres=.03+.97*pow(1.-facing,5.);
@@ -548,6 +549,11 @@ export function createEnvironment(parent, state, water) {
     },
     setTitle(on) {
       titleShore.visible = on;
+    },
+    // A hooked fish pulling toward open water (-z) heels the skiff that way.
+    tug(amount) {
+      anchoredMotion.kick('rx', -amount);
+      anchoredMotion.kick('y', -amount * 0.4);
     },
     get anchored() {
       return anchored;

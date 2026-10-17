@@ -1,6 +1,6 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture} from './textures.js?v=5';
-import {APPAREL, BAITS} from './economy.js?v=5';
+import {surfaceTexture} from './textures.js?v=6';
+import {APPAREL, BAITS} from './economy.js?v=6';
 export const SKINS = ['#edc7a6', '#d3a37e', '#b17f5c', '#875e45', '#624735'],
   HAIRS = ['#302b29', '#65503b', '#a58455', '#352b32'];
 export function createAngler(parent, state) {

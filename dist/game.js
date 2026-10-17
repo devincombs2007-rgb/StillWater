@@ -33,7 +33,7 @@ import {
   rebirth,
   effectiveRod,
   apparelLuck,
-} from './economy.js?v=5';
+} from './economy.js?v=6';
 import {
   worldConditions,
   startEncounter,
@@ -43,11 +43,11 @@ import {
   resolveFailure,
   reelProfile,
   isReelHit,
-} from './fishing.js?v=5';
-import {createWorld} from './scene.js?v=5';
-import {createAudio} from './audio.js?v=5';
-import {showPreview, stopPreview} from './preview.js?v=5';
-import {fishSvg} from './art.js?v=5';
+} from './fishing.js?v=6';
+import {createWorld} from './scene.js?v=6';
+import {createAudio} from './audio.js?v=6';
+import {showPreview, stopPreview} from './preview.js?v=6';
+import {fishSvg} from './art.js?v=6';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
   esc = v =>
@@ -399,6 +399,16 @@ for (const type of ['selectstart', 'contextmenu', 'dragstart'])
   document.addEventListener(type, e => {
     if (!e.target.closest('input,textarea,[contenteditable=true]')) e.preventDefault();
   });
+// Once a fish is on (or biting), a tap anywhere on the scene counts, not just the button.
+let sceneTap = null;
+$('#world').addEventListener('pointerdown', e => {
+  sceneTap = ['bite', 'reeling'].includes(stage) ? {x: e.clientX, y: e.clientY} : null;
+});
+$('#world').addEventListener('pointerup', e => {
+  if (!sceneTap || panelType || Math.hypot(e.clientX - sceneTap.x, e.clientY - sceneTap.y) > 14) return;
+  sceneTap = null;
+  action();
+});
 document.addEventListener('keydown', e => {
   // Shortcuts: 1-4 switch places, C toggles the camera.
   if (!inTitle && !panelType && !e.repeat && e.target.tagName !== 'INPUT' && !e.metaKey && !e.ctrlKey) {
@@ -640,7 +650,7 @@ function keeper() {
   return `<div class="keeper-welcome"><svg class="keeper-portrait" viewBox="0 0 160 150" aria-label="Milo, the smiling bait shop keeper" role="img"><defs><linearGradient id="apron" x2="0" y2="1"><stop stop-color="#9ab49e"/><stop offset="1" stop-color="#527a6d"/></linearGradient></defs><circle cx="80" cy="76" r="65" fill="#c1ae8120"/><path d="M33 140V111Q40 86 80 86Q120 86 127 111V140" fill="#e7ce9e"/><path d="M57 93L47 139H113L103 93L92 108H68Z" fill="url(#apron)"/><rect x="64" y="116" width="32" height="18" rx="5" fill="#416959"/><path d="M69 123q11-12 22 0q-11 12-22 0" fill="#dfd8b5"/><ellipse cx="80" cy="64" rx="35" ry="37" fill="#d9ad85"/><ellipse cx="46" cy="64" rx="6" ry="10" fill="#d9ad85"/><ellipse cx="114" cy="64" rx="6" ry="10" fill="#d9ad85"/><path d="M45 53Q44 22 80 21Q113 20 116 54Q97 47 80 46Q61 47 45 53" fill="#a4936b"/><path d="M39 49Q80 31 121 49L126 57Q81 47 35 58Z" fill="#c9b98a"/><path d="M59 65q5-5 10 0M91 65q5-5 10 0" fill="none" stroke="#4d5045" stroke-width="3" stroke-linecap="round"/><ellipse cx="59" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><ellipse cx="101" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><path d="M68 81q12 12 24 0" fill="none" stroke="#825b4c" stroke-width="2.5" stroke-linecap="round"/><path d="M4 139H156V150H4Z" fill="#7d6a4f"/><path d="M8 143h144" stroke="#aa9470"/><path d="M123 119q12-19 19-4q5 9-6 18" fill="#d9ad85"/></svg><div><span class="eyebrow">MILO · YOUR BAIT KEEPER</span><p>“Hello! Welcome to the bait shop.”</p><small>A little patience. A lure you love.</small></div></div>`;
 }
 function extrasView() {
-  return `<span class="eyebrow">LITTLE DETAILS, LONG TIDES</span><h2 id="panel-title">Extra</h2><p>Created by ChatGPT and Devin Combs.</p><p><b>Free fishing</b> is the current game: build your collection, raise your fish, and decide where your pearls go.</p><p><b>Story mode</b> is a future idea. It has not been implemented. A story-led journey and a separate ongoing free-fishing mode are recorded in the development handoff.</p><p>Version 1.4 · The Bait Shop. All purchases use earned in-game pearls.</p><button class="secondary-button" id="extra-back">Back</button>`;
+  return `<span class="eyebrow">LITTLE DETAILS, LONG TIDES</span><h2 id="panel-title">Extra</h2><p>Created by ChatGPT and Devin Combs.</p><p><b>Free fishing</b> is the current game: build your collection, raise your fish, and decide where your pearls go.</p><p><b>Story mode</b> is a future idea. It has not been implemented. A story-led journey and a separate ongoing free-fishing mode are recorded in the development handoff.</p><p>Version 1.5 · The Living Water. All purchases use earned in-game pearls.</p><button class="secondary-button" id="extra-back">Back</button>`;
 }
 function newGameView() {
   return `<span class="eyebrow">A FRESH BEGINNING</span><h2 id="panel-title">Start a new sanctuary?</h2><p>This replaces the progress saved on this device. Use Options to export your current save first.</p><button class="primary-button" id="confirm-new">Replace my save & start new</button><button class="secondary-button" id="cancel-new">Keep my sanctuary</button>`;
@@ -709,7 +719,7 @@ function characterView() {
   return `<span class="eyebrow">YOUR ANGLER · A PERMANENT FIRST CHOICE</span><h2 id="panel-title">Meet the person by the water.</h2><p>Your name and base appearance are set when you begin. Shirts, hats, sunglasses, trousers, and shoes can be changed later at the market.</p><label class="name-label" for="character-name">NAME</label><input class="character-name" id="character-name" maxlength="24" value="${esc(creation.name)}"><div class="eyebrow section-space">SKIN TONE</div><div class="swatches">${['#edc7a6', '#d3a37e', '#b17f5c', '#875e45', '#624735'].map((c, i) => `<button data-skin="${i}" aria-label="Skin tone ${i + 1}" style="background:${c}" class="${creation.skin === i ? 'chosen' : ''}"></button>`).join('')}</div><div class="eyebrow section-space">HAIR</div><div class="swatches">${['#302b29', '#65503b', '#a58455', '#352b32'].map((c, i) => `<button data-hair="${i}" aria-label="Hair color ${i + 1}" style="background:${c}" class="${creation.hair === i ? 'chosen' : ''}"></button>`).join('')}</div><div class="quality-options">${['Soft waves', 'Classic', 'Close cut'].map((n, i) => `<button class="secondary-button" data-style="${i}" ${creation.style === i ? 'disabled' : ''}>${n}</button>`).join('')}</div><button class="primary-button" id="create-character">Begin my angler’s story ↗</button>`;
 }
 function helpView() {
-  return `<span class="eyebrow">THE BAIT SHOP UPDATE · 1.4</span><h2 id="panel-title">Read the water. Earn the catch.</h2><div class="help-steps"><p><b>Cast & hook.</b> Hold and release to cast. Watch the physical bobber, hook, bait, and line. Not every cast gets a bite. Set the hook within the short bite window.</p><p><b>Fight & tension.</b> Common fish have a wide, slow timing window. Rarer fish have a narrower window and faster marker. Tap inside the glowing zone to reel; each pull brings the bobber closer. Misses raise tension and slack. Wait to lower tension, but take too long and the fish escapes. Overpowered tackle can snap. Let go to protect your rod. Stronger rods and lines are separate purchases.</p><p><b>Raise & invest.</b> Keeping a catch drops it into the aquarium. Baby fish grow, care upgrades improve income and value, and feeding costs 8 pearls for a small growth boost. There is no hunger penalty. Market purchases compete for your pearls. Buy bait once for unlimited casts; bait unlocks survive rebirth.</p><p><b>Your fixed angler.</b> Drag in 3D mode to orbit; switch to first person to see your hands. A landed fish moves to the front camera and hangs from the hook. Drag the scene to turn it.</p><p><b>World conditions.</b> A 20-minute world day and changing simulated weather affect odds. Catfish and some deep-water fish favor night; trout favor dawn. These are game-balance rules, not a real-world forecast.</p></div><div class="audio-options"><button class="secondary-button" id="options-sound">${state.audioOn ? 'Sound on · tap to mute' : 'Sound off · tap to enable'}</button><div class="quality-options">${[
+  return `<span class="eyebrow">THE LIVING WATER UPDATE · 1.5</span><h2 id="panel-title">Read the water. Earn the catch.</h2><div class="help-steps"><p><b>Cast & hook.</b> Hold and release to cast. Watch the float: small twitches are curious fish, a hard plunge is a bite. Not every cast gets a bite. Set the hook within the short bite window. Once a line is out, you can tap anywhere on the scene to hook and reel.</p><p><b>Fight & tension.</b> Common fish have a wide, slow timing window. Rarer fish have a narrower window and faster marker. Tap inside the glowing zone to reel; each pull brings the bobber closer. Misses raise tension and slack. Wait to lower tension, but take too long and the fish escapes. Overpowered tackle can snap. Let go to protect your rod. Stronger rods and lines are separate purchases.</p><p><b>Raise & invest.</b> Keeping a catch drops it into the aquarium. Baby fish grow, care upgrades improve income and value, and feeding costs 8 pearls for a small growth boost. There is no hunger penalty. Market purchases compete for your pearls. Buy bait once for unlimited casts; bait unlocks survive rebirth.</p><p><b>Your fixed angler.</b> Drag in 3D mode to orbit; switch to first person to see your hands. A landed fish moves to the front camera and hangs from the hook. Drag the scene to turn it.</p><p><b>Shortcuts.</b> Space or Enter casts and reels. 1–4 switch between the lake, aquarium, bait shop and field notes. C swaps the camera.</p><p><b>World conditions.</b> A 20-minute world day and changing simulated weather affect odds. Catfish and some deep-water fish favor night; trout favor dawn. These are game-balance rules, not a real-world forecast.</p></div><div class="audio-options"><button class="secondary-button" id="options-sound">${state.audioOn ? 'Sound on · tap to mute' : 'Sound off · tap to enable'}</button><div class="quality-options">${[
     [0.15, 'Quiet'],
     [0.3, 'Balanced'],
     [0.5, 'Full'],
@@ -718,7 +728,7 @@ function helpView() {
       ([v, n]) =>
         `<button class="secondary-button" data-volume="${v}" ${state.volume === v ? 'disabled' : ''}>${n} sound</button>`,
     )
-    .join('')}</div></div><div class="quality-options">${[
+    .join('')}</div><button class="secondary-button" id="options-haptics">${state.haptics === false ? 'Vibration off · tap to enable' : 'Vibration on · tap to turn off'}</button></div><div class="quality-options">${[
     ['battery', 'Battery · 30 fps'],
     ['balanced', 'Balanced · 45 fps'],
     ['crisp', 'Crisp · 60 fps'],
@@ -802,7 +812,13 @@ function bindPanel() {
     $('#cancel-new').onclick = () => closePanel();
     $('#confirm-new').onclick = () => {
       closePanel(true);
-      const clean = {...freshState(), quality: state.quality, audioOn: state.audioOn, volume: state.volume};
+      const clean = {
+        ...freshState(),
+        quality: state.quality,
+        audioOn: state.audioOn,
+        volume: state.volume,
+        haptics: state.haptics,
+      };
       Object.keys(state).forEach(k => delete state[k]);
       Object.assign(state, clean);
       pending = null;
@@ -984,6 +1000,12 @@ function bindPanel() {
     $('#options-sound').onclick = async () => {
       state.audioOn = await sound.toggle();
       updateSoundButton(state.audioOn);
+      save();
+      openPanel('help');
+    };
+    $('#options-haptics').onclick = () => {
+      state.haptics = state.haptics === false;
+      if (state.haptics) buzz(40);
       save();
       openPanel('help');
     };

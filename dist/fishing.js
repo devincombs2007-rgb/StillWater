@@ -1,4 +1,4 @@
-import {BAITS, LINES, effectiveRod, fishWeight, rollFish} from './economy.js?v=5';
+import {BAITS, LINES, effectiveRod, fishWeight, rollFish} from './economy.js?v=6';
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 export function worldConditions(now = Date.now(), region = 0) {
   const cycle = (now % 1200000) / 1200000,
