@@ -6,7 +6,7 @@ import {createAngler} from './angler.js?v=7';
 import {createTackle} from './tackle.js?v=7';
 import {surfaceTexture, cloudTexture} from './textures.js?v=7';
 import {rockGeometry, dockGeometry, lantern, reedGeometry} from './scenery.js?v=7';
-import {place, merge, fbm} from './models.js?v=7';
+import {place, merge, fbm, paint, tube, displace, lathe} from './models.js?v=7';
 import {createTankSurface} from './surface.js?v=7';
 import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=7';
 import {worldConditions} from './fishing.js?v=7';
@@ -365,11 +365,21 @@ export function createWorld(canvas, state, onError) {
     }
   }
   // An actual three-dimensional glass aquarium, with mesh fish and orbit controls.
-  const tankBase = mat('#193c3e', {metalness: 0.3, roughness: 0.4});
-  mesh(geoCylinder, tankBase, tank, [0, -0.52, 0], [7, 0.6, 5.5]);
-  mesh(geoCylinder, mat('#45605a', {metalness: 0.6}), tank, [0, -0.18, 0], [6.7, 0.08, 5.2]);
-  mesh(geoBox, mat('#394c45'), tank, [0, 0.02, 0], [9.4, 0.3, 5.4]);
-  mesh(geoBox, mat('#b9aa84'), tank, [0, 0.22, 0], [8.98, 0.22, 4.98]);
+  // Furniture-grade stand: a wooden cabinet with panelled doors, plinth and top lip.
+  const stand = [];
+  const woodTone = (x, y, z, out) => out.set('#5a4231').multiplyScalar(0.85 + fbm(x * 0.8, y * 9, z * 0.8, 3) * 0.35);
+  stand.push(paint(place(new T.BoxGeometry(9.7, 2.6, 5.6, 8, 4, 4), [0, -1.25, 0]), woodTone));
+  stand.push(paint(place(new T.BoxGeometry(9.95, 0.16, 5.85), [0, 0.0, 0]), '#3f2e22'));
+  stand.push(paint(place(new T.BoxGeometry(9.9, 0.22, 5.8), [0, -2.55, 0]), '#33261c'));
+  for (let k = 0; k < 4; k++) {
+    const x = -3.6 + k * 2.4;
+    stand.push(paint(place(new T.BoxGeometry(2.1, 1.9, 0.08), [x, -1.25, 2.82]), (xx, y, z, out) => woodTone(xx, y, z, out).multiplyScalar(1.12)));
+    stand.push(paint(place(new T.BoxGeometry(1.7, 1.5, 0.06), [x, -1.25, 2.86]), woodTone));
+    stand.push(paint(place(new T.SphereGeometry(0.06, 8, 6), [x + (k % 2 ? -0.75 : 0.75), -1.15, 2.92]), '#c9a86a'));
+  }
+  mesh(merge(stand), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.55}), tank);
+  // Inner floor slab under the substrate.
+  mesh(geoBox, mat('#2e3d38'), tank, [0, 0.12, 0], [9.2, 0.12, 5.2]);
   const glassMat = new T.MeshPhysicalMaterial({
     color: '#a5e3da',
     transparent: true,
@@ -386,12 +396,14 @@ export function createWorld(canvas, state, onError) {
   );
   edges.position.copy(glass.position);
   tank.add(edges);
-  for (let top of [0.18, 5.03]) {
-    for (let z of [-2.67, 2.67])
-      mesh(geoBox, mat('#adba9e', {metalness: 0.5, roughness: 0.35}), tank, [0, top, z], [9.5, 0.07, 0.07]);
-    for (let x of [-4.71, 4.71])
-      mesh(geoBox, mat('#adba9e', {metalness: 0.5, roughness: 0.35}), tank, [x, top, 0], [0.07, 0.07, 5.3]);
+  // Brushed metal trim on every edge of the glass box.
+  const trim = [];
+  for (const top of [0.15, 5.03]) {
+    for (const z of [-2.67, 2.67]) trim.push(place(new T.BoxGeometry(9.5, 0.09, 0.09), [0, top, z]));
+    for (const x of [-4.71, 4.71]) trim.push(place(new T.BoxGeometry(0.09, 0.09, 5.3), [x, top, 0]));
   }
+  for (const x of [-4.71, 4.71]) for (const z of [-2.67, 2.67]) trim.push(place(new T.BoxGeometry(0.09, 4.9, 0.09), [x, 2.59, z]));
+  mesh(merge(trim), mat('#3a403c', {metalness: 0.65, roughness: 0.3}), tank);
   const tankWater = mesh(
     new T.PlaneGeometry(9.15, 5.15, 46, 28),
     new T.MeshPhysicalMaterial({
@@ -432,12 +444,33 @@ export function createWorld(canvas, state, onError) {
     shaft.userData.phase = i * 1.7;
     shafts.push(shaft);
   }
-  const sandGeo = new T.PlaneGeometry(9, 5, 28, 18);
+  // Substrate rises toward the back like a planted aquascape, speckled with gravel.
+  const sandGeo = new T.PlaneGeometry(9, 5, 46, 26);
   const sa = sandGeo.attributes.position;
-  for (let i = 0; i < sa.count; i++) sa.setZ(i, Math.sin(sa.getX(i) * 2) * Math.cos(sa.getY(i) * 2) * 0.045);
+  for (let i = 0; i < sa.count; i++) {
+    const x = sa.getX(i),
+      y = sa.getY(i);
+    sa.setZ(i, Math.max(0, (y + 2.5) / 5) * 0.32 + fbm(x * 0.9, y * 0.9, 0, 8) * 0.12 + Math.sin(x * 2) * Math.cos(y * 2) * 0.03);
+  }
   sandGeo.computeVertexNormals();
-  const sand = mesh(sandGeo, mat('#b7aa81'), tank, [0, 0.35, 0]);
+  paint(sandGeo, (x, y, z, out) => out.set('#bfae86').lerp(new T.Color('#8e7f62'), Math.max(0, fbm(x * 3, y * 3, 0, 2) + 0.2)).multiplyScalar(0.9 + Math.random() * 0.12));
+  const sand = mesh(sandGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}), tank, [0, 0.3, 0]);
   sand.rotation.x = -Math.PI / 2;
+  const substrate = (x, z) => 0.3 + Math.max(0, (2.5 - z) / 5) * 0.32 + fbm(x * 0.9, -z * 0.9, 0, 8) * 0.12;
+  const gravelGeo = new T.IcosahedronGeometry(0.05, 0),
+    gravel = new T.InstancedMesh(gravelGeo, new T.MeshStandardMaterial({roughness: 0.8}), 260),
+    gm = new T.Object3D();
+  for (let i = 0; i < 260; i++) {
+    const x = (Math.random() - 0.5) * 8.6,
+      z = (Math.random() - 0.5) * 4.6;
+    gm.position.set(x, substrate(x, z) + 0.01, z);
+    gm.rotation.set(Math.random() * 3, Math.random() * 3, 0);
+    gm.scale.set(0.6 + Math.random(), 0.4 + Math.random() * 0.4, 0.6 + Math.random());
+    gm.updateMatrix();
+    gravel.setMatrixAt(i, gm.matrix);
+    gravel.setColorAt(i, new T.Color().setHSL(0.09 + Math.random() * 0.05, 0.15 + Math.random() * 0.15, 0.35 + Math.random() * 0.35));
+  }
+  tank.add(gravel);
   const causticUniform = {time: {value: 0}};
   const causticMat = new T.ShaderMaterial({
     uniforms: causticUniform,
@@ -452,72 +485,91 @@ export function createWorld(canvas, state, onError) {
   });
   const caustic = mesh(new T.PlaneGeometry(8.9, 4.9), causticMat, tank, [0, 0.42, 0]);
   caustic.rotation.x = -Math.PI / 2;
-  const rocks = [];
-  for (let i = 0; i < 18; i++) {
-    const x = (Math.random() - 0.5) * 8.4,
-      z = (Math.random() - 0.5) * 4.3;
-    const r = mesh(
-      new T.DodecahedronGeometry(0.15 + Math.random() * 0.3, 0),
-      mat(['#7f9483', '#8d9684', '#6b8276'][i % 3]),
-      tank,
-      [x, 0.45, z],
-      [1.4, 0.7, 1],
-    );
-    r.rotation.set(Math.random() * 2, Math.random() * 3, Math.random());
-    rocks.push(r);
-  }
+  // Hardscape: a few weathered stones grouped off-centre, plus a driftwood branch.
+  const stoneMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9});
+  const stonePlan = [[-2.6, -1.3, 0.7], [-1.9, -1.6, 0.45], [-3.2, -0.6, 0.38], [2.9, 1.1, 0.32], [0.4, 1.4, 0.25], [3.6, -1.7, 0.5], [-0.6, -1.8, 0.3]];
+  stonePlan.forEach(([x, z, sc], i) => {
+    const r = mesh(rockGeometry(50 + i, i % 2 === 0, ['#6f7d76', '#8a958c']), stoneMat, tank, [x, substrate(x, z) + sc * 0.25, z], [sc * 1.3, sc * 1.1, sc]);
+    r.rotation.y = i * 1.3;
+  });
+  const drift = [];
+  const branch = (pts, r0) => drift.push(paint(tube(pts.map(p => new T.Vector3(...p)), u => r0 * (1 - u * 0.7), 7), (x, y, z, out) => out.set('#5b4636').multiplyScalar(0.8 + fbm(x * 4, y * 4, z * 4, 6) * 0.4)));
+  branch([[1.2, 0.5, -1.4], [1.9, 0.9, -1.2], [2.6, 1.6, -1.5], [3.0, 2.4, -1.3]], 0.14);
+  branch([[1.9, 0.9, -1.2], [1.6, 1.6, -0.9], [1.3, 2.1, -1.1]], 0.07);
+  branch([[2.6, 1.6, -1.5], [3.4, 1.9, -1.9]], 0.06);
+  mesh(merge(drift), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.85}), tank);
   const plants = new T.Group(),
     arch = new T.Group(),
     lanterns = new T.Group();
   tank.add(plants, arch, lanterns);
   const leaves = [];
-  function plant(x, z, h, parent) {
-    for (let j = 0; j < 5; j++) {
-      const curve = new T.CatmullRomCurve3([
-        new T.Vector3(x, 0.4, z),
-        new T.Vector3(x + (j - 2) * 0.16, h * 0.5, z + 0.1),
-        new T.Vector3(x + (j - 2) * 0.24, h, z),
-      ]);
-      const l = mesh(new T.TubeGeometry(curve, 10, 0.045, 4, false), mat(j % 2 ? '#508f75' : '#397a64'), parent);
-      leaves.push(l);
+  const plantMat = addSway(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.6, side: T.DoubleSide}), 0.06, 0.4);
+  // Ribbon grass (vallisneria): tall flat blades that bend over near the surface.
+  function ribbons(x, z, count, h, seed) {
+    const parts = [];
+    for (let k = 0; k < count; k++) {
+      const a = k * 2.4 + seed,
+        bladeH = h * (0.7 + ((k * 37) % 10) / 25),
+        geo = new T.PlaneGeometry(0.07, bladeH, 1, 10),
+        p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const u = (p.getY(i) + bladeH / 2) / bladeH;
+        p.setXYZ(i, p.getX(i) * (1 - u * 0.4) + Math.sin(u * 2.5 + k) * 0.18 * u, u * bladeH, Math.pow(u, 2) * 0.35 * Math.cos(a));
+      }
+      geo.computeVertexNormals();
+      place(geo, [x + Math.cos(a) * 0.18, substrate(x, z) - 0.03, z + Math.sin(a) * 0.12], [0, a, 0]);
+      parts.push(paint(geo, (xx, y, zz, out) => out.set(k % 2 ? '#4f8f62' : '#6aa86f').multiplyScalar(0.75 + Math.min(0.4, (y - 0.3) * 0.12))));
     }
+    return merge(parts);
   }
-  const broadLeaves = new T.Group();
-  tank.add(broadLeaves);
-  for (let i = 0; i < 12; i++) {
-    const x = i < 6 ? -3.8 : 3.6,
-      z = -1.4 + (i % 3) * 0.5,
-      h = 0.7 + (i % 4) * 0.28;
-    const shape = new T.Shape();
-    shape.moveTo(0, 0);
-    shape.bezierCurveTo(-0.24, h * 0.45, -0.22, h * 0.85, 0.02, h);
-    shape.bezierCurveTo(0.27, h * 0.8, 0.22, h * 0.32, 0, 0);
-    const leaf = mesh(
-      new T.ShapeGeometry(shape, 14),
-      mat(i % 2 ? '#418c6e' : '#6eaa7a', {side: T.DoubleSide}),
-      broadLeaves,
-      [x, 0.39, z],
-    );
-    leaf.rotation.y = i * 0.93;
-    leaf.rotation.z = ((i % 3) - 1) * 0.3;
+  // Amazon sword: rosette of broad leaves with a pale midrib.
+  function sword(x, z, h, seed) {
+    const parts = [];
+    for (let k = 0; k < 9; k++) {
+      const a = (k / 9) * Math.PI * 2 + seed,
+        len = h * (0.75 + (k % 3) * 0.12),
+        geo = new T.PlaneGeometry(1, 1, 4, 10),
+        p = geo.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const u = p.getY(i) + 0.5,
+          v = p.getX(i),
+          width = Math.sin(Math.PI * Math.min(1, u * 1.05)) * 0.28 * (u > 0.1 ? 1 : u * 10);
+        const out = u * len * 0.8,
+          up = Math.sin(u * 1.4) * len * 0.75 - u * u * len * 0.2;
+        p.setXYZ(i, v * width, up, out - Math.abs(v) * 0.04);
+      }
+      geo.computeVertexNormals();
+      place(geo, [x, substrate(x, z) - 0.02, z], [0, a, 0]);
+      parts.push(paint(geo, (xx, y, zz, out) => out.set('#3f8a5e').lerp(new T.Color('#86c27f'), Math.min(1, (y - 0.3) / (h * 0.8)))));
+    }
+    return merge(parts);
   }
-  plant(-3.5, -1.6, 1.8, tank);
-  plant(3.5, -1.5, 1.4, tank);
-  plant(-3.6, 1.4, 0.9, tank);
-  for (let i = 0; i < 7; i++) plant(-3 + i, 1.8, 1.3 + Math.sin(i) * 0.4, plants);
-  const arc = mesh(new T.TorusGeometry(1.12, 0.25, 9, 30, Math.PI), mat('#91a095'), arch, [1.2, 0.55, -0.8]);
-  mesh(new T.DodecahedronGeometry(0.35), mat('#91a095'), arch, [0.1, 0.47, -0.8]);
-  mesh(new T.DodecahedronGeometry(0.35), mat('#91a095'), arch, [2.3, 0.47, -0.8]);
+  // Moss balls nestled between the stones.
+  function mossBall(x, z, r) {
+    return paint(displace(place(new T.SphereGeometry(r, 14, 10), [0, 0, 0]), r * 0.18, 9 / r, 4, 2), (xx, y, zz, out) => out.set('#3e6e43').multiplyScalar(0.8 + fbm(xx * 20, y * 20, zz * 20, 2) * 0.4)).translate(x, substrate(x, z) + r * 0.8, z);
+  }
+  const baseGreens = [ribbons(-3.7, -1.9, 9, 3.4, 1), ribbons(3.9, -1.9, 8, 3.0, 2), sword(-3.4, 1.2, 1.1, 0.4), sword(3.4, -0.6, 1.3, 1.1), mossBall(-1.4, -1.0, 0.22), mossBall(-2.2, -0.6, 0.16)];
+  for (const g of baseGreens) leaves.push(mesh(g, plantMat, tank));
+  // River garden decor: a lush back row of ribbon grass and swords.
+  for (let i = 0; i < 6; i++) leaves.push(mesh(i % 2 ? sword(-2.7 + i * 1.1, 1.7, 0.9, i) : ribbons(-2.7 + i * 1.1, -2.0, 7, 2.4, i + 3), plantMat, plants));
+  // Moonstone arch: a weathered stone bridge with moss along its crown.
+  const archGeo = new T.TorusGeometry(1.1, 0.28, 12, 36, Math.PI);
+  displace(archGeo, 0.09, 3, 9, 3);
+  const archNormals = archGeo.attributes.normal;
+  paint(archGeo, (x, y, z, out) => out.set('#8d998f').multiplyScalar(0.85 + fbm(x * 4, y * 4, z * 4, 1) * 0.3));
+  const ac = archGeo.attributes.color;
+  for (let i = 0; i < ac.count; i++) if (archNormals.getY(i) > 0.6) ac.setXYZ(i, 0.33, 0.48, 0.3);
+  mesh(archGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9}), arch, [1.2, substrate(1.2, -0.8) - 0.05, -0.8]);
+  for (const x of [0.1, 2.3]) mesh(rockGeometry(70 + x, true, ['#7f8b82', '#97a198']), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9}), arch, [x, substrate(x, -0.8) + 0.12, -0.8], [0.42, 0.35, 0.38]);
+  // Sunken lanterns: little glass lanterns glowing on the sand.
+  const lanternGlass = mat('#ffd9a0', {emissive: '#eab979', emissiveIntensity: 0.9, transparent: true, opacity: 0.75});
   for (let i = 0; i < 3; i++) {
-    const x = -2 + i * 2;
-    mesh(
-      geoCylinder,
-      mat('#ccb48b', {emissive: '#eab979', emissiveIntensity: 0.8}),
-      lanterns,
-      [x, 0.65, 0.5],
-      [0.12, 0.4, 0.12],
-    );
-    mesh(geoCylinder, mat('#3d5e50'), lanterns, [x, 0.88, 0.5], [0.17, 0.06, 0.17]);
+    const x = -2 + i * 2,
+      l = lantern(lanternGlass);
+    l.scale.setScalar(0.75);
+    l.position.set(x, substrate(x, 0.5) - 0.02, 0.5);
+    l.rotation.set((i - 1) * 0.15, i * 0.8, (i - 1) * 0.12);
+    lanterns.add(l);
   }
   const bubblesGeo = new T.BufferGeometry();
   const bubbleCoords = [];
@@ -1090,7 +1142,6 @@ export function createWorld(canvas, state, onError) {
         }
         pa.needsUpdate = true;
       }
-      for (const l of leaves) l.rotation.z = Math.sin(clock * 0.65 + l.id) * 0.008;
       for (const sh of shafts) sh.rotation.z = 0.12 - (sh.userData.phase % 3) * 0.03 + Math.sin(clock * 0.21 + sh.userData.phase) * 0.05;
       const ba = bubblesGeo.attributes.position;
       for (let i = 0; i < ba.count; i++) {

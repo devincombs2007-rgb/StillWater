@@ -26,7 +26,7 @@ export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom =
     // multiples of pi, which used to send every fish to the same x and clump the school.
     s.goal = {
       x: Math.sin(a * 1.31 + s.phase * 0.61) * 3.35,
-      y: bottom ? 0.85 + 0.15 * Math.sin(a) : 1.1 + (0.5 + 0.5 * Math.sin(a * 0.7)) * 2.8,
+      y: bottom ? 1.0 + 0.12 * Math.sin(a) : 1.1 + (0.5 + 0.5 * Math.sin(a * 0.7)) * 2.8,
       z: Math.cos(a * 0.83) * 1.6,
     };
   }
@@ -69,7 +69,7 @@ export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom =
   }
   for (const [axis, min, max] of [
     ['x', -3.8, 3.8],
-    ['y', 0.7, 4.25],
+    ['y', 0.85, 4.25],
     ['z', -1.95, 1.95],
   ]) {
     const p = s.p[axis];
@@ -98,7 +98,7 @@ export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom =
   s.p.y += s.v.y * dt;
   s.p.z += s.v.z * dt;
   s.p.x = clamp(s.p.x, -4, 4);
-  s.p.y = clamp(s.p.y, 0.62, 4.35);
+  s.p.y = clamp(s.p.y, 0.75, 4.35);
   s.p.z = clamp(s.p.z, -2.15, 2.15);
   const yaw = Math.atan2(-s.v.z, s.v.x),
     diff = Math.atan2(Math.sin(yaw - s.yaw), Math.cos(yaw - s.yaw));
