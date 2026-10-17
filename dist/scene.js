@@ -505,6 +505,97 @@ export function createWorld(canvas, state, onError) {
     gravel.setColorAt(i, new T.Color().setHSL(0.09 + Math.random() * 0.05, 0.15 + Math.random() * 0.15, 0.35 + Math.random() * 0.35));
   }
   tank.add(gravel);
+  // The aquarium lives in a cosy lakeside room: plank floor, rug, panelled walls, a
+  // bookshelf and lamp, and a window that looks out on the real sky at this hour.
+  const FLOOR = -2.66,
+    room = new T.Group();
+  tank.add(room);
+  const planks = new T.PlaneGeometry(44, 34, 44, 1);
+  planks.rotateX(-Math.PI / 2);
+  paint(planks, (x, y, z, out) => out.set('#6b4c35').multiplyScalar(0.8 + ((Math.floor(x + 22) * 7) % 5) * 0.06 + fbm(x * 0.3, 0, z * 2, 12) * 0.12));
+  const floor = mesh(planks, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.7, map: surfaceTexture('wood')}), room, [0, FLOOR, -2]);
+  floor.receiveShadow = true;
+  const rugGeo = new T.RingGeometry(0.001, 1, 64, 40);
+  rugGeo.rotateX(-Math.PI / 2);
+  paint(rugGeo, (x, y, z, out) => {
+    const r = Math.hypot(x, z);
+    // Braided rag rug: alternating coloured rings with a cream border.
+    out.set(r > 0.93 ? '#d8c39a' : ['#3f6f6c', '#a65d4b', '#d8c39a', '#2f5a5a', '#8c7a4e'][Math.floor(r * 14) % 5]).multiplyScalar(0.92 + 0.08 * Math.sin(Math.atan2(z, x) * 40 + r * 60));
+  });
+  mesh(rugGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 1, map: surfaceTexture('cloth')}), room, [0, FLOOR + 0.02, 1.5], [9, 1, 5.5]).receiveShadow = true;
+  // Walls face inward only, so they vanish when the orbit camera swings past them.
+  const wallMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9});
+  const wall = (w, h, p, rotY) => {
+    const g = new T.PlaneGeometry(w, h, 24, 8);
+    paint(g, (x, y, z, out) => {
+      const v = y + h / 2;
+      out.set(v < 3.2 ? '#5c4632' : '#c7b998').multiplyScalar(v < 3.2 ? 0.85 + 0.15 * Math.sign(Math.sin(x * 3)) * 0.4 : 0.92 + 0.08 * Math.sin(x * 9));
+      if (Math.abs(v - 3.2) < 0.12) out.set('#3f2e22');
+    });
+    const m = mesh(g, wallMat, room, p);
+    m.rotation.y = rotY;
+    m.receiveShadow = true;
+    return m;
+  };
+  wall(44, 16, [0, FLOOR + 8, -12], 0);
+  wall(34, 16, [-20, FLOOR + 8, -2], Math.PI / 2);
+  wall(34, 16, [20, FLOOR + 8, -2], -Math.PI / 2);
+  // Window onto the lake: a framed opening whose glass paints today's sky, hills and water.
+  const windowUniforms = {top: {value: new T.Color()}, bottom: {value: new T.Color()}, sunDir: {value: new T.Vector3(0, 1, 0)}, night: {value: 0}, time: {value: 0}};
+  mesh(
+    new T.PlaneGeometry(7, 5.2),
+    new T.ShaderMaterial({
+      uniforms: windowUniforms,
+      fog: false,
+      vertexShader: 'varying vec2 v;void main(){v=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+      fragmentShader:
+        'varying vec2 v;uniform vec3 top;uniform vec3 bottom;uniform vec3 sunDir;uniform float night;uniform float time;' +
+        'void main(){float h=v.y;vec3 c=mix(bottom,top,smoothstep(.35,1.,h));' +
+        'vec2 sp=vec2(.5+sunDir.x*.45,.4+sunDir.y*.6);c+=vec3(1.,.85,.6)*pow(max(0.,1.-length((v-sp)*vec2(1.4,1.))*3.),3.)*(1.-night);' +
+        'float star=step(.997,fract(sin(dot(floor(v*vec2(140.,100.)),vec2(12.9898,78.233)))*43758.5));c+=star*night*smoothstep(.5,.8,h);' +
+        'float hill=.42+.06*sin(v.x*7.+1.)+.04*sin(v.x*17.)+.02*sin(v.x*41.);vec3 land=mix(vec3(.12,.2,.17),vec3(.25,.36,.3),1.-night)*mix(1.,.55,night);' +
+        'if(h<hill)c=mix(land,bottom,.25);float lakeY=.3;if(h<lakeY){vec3 w=mix(bottom,top,.4)*.75;w+=.04*sin(v.x*90.+time*1.5)*sin(h*120.);c=w;}' +
+        'gl_FragColor=vec4(c,1.);}',
+    }),
+    room,
+    [-8, FLOOR + 8.2, -11.95],
+  );
+  const frameParts = [];
+  for (const [w, h, x, y] of [[7.6, 0.3, 0, 2.75], [7.6, 0.45, 0, -2.75], [0.3, 5.8, -3.65, 0], [0.3, 5.8, 3.65, 0], [0.12, 5.2, 0, 0], [7, 0.12, 0, 0.6]])
+    frameParts.push(paint(place(new T.BoxGeometry(w, h, 0.2), [x, y, 0]), '#e6dcc4'));
+  frameParts.push(paint(place(new T.BoxGeometry(8.2, 0.18, 0.6), [0, -2.95, 0.3]), '#d8ccb0'));
+  mesh(merge(frameParts), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.6}), room, [-8, FLOOR + 8.2, -11.85]);
+  // Bookshelf, a potted fern and a standing lamp make the room feel lived in.
+  const shelf = [];
+  shelf.push(paint(place(new T.BoxGeometry(4.4, 7, 1.2), [0, 3.5, 0]), '#4d3828'));
+  for (let k = 0; k < 4; k++) {
+    shelf.push(paint(place(new T.BoxGeometry(4.0, 0.12, 1.1), [0, 0.9 + k * 1.6, 0.08]), '#3a2a1e'));
+    let x = -1.85;
+    while (x < 1.7) {
+      const w = 0.18 + Math.random() * 0.22,
+        h = 0.9 + Math.random() * 0.5;
+      shelf.push(paint(place(new T.BoxGeometry(w, h, 0.75), [x + w / 2, 0.96 + k * 1.6 + h / 2, 0.1], [0, 0, Math.random() < 0.12 ? 0.25 : 0]), ['#7a3f36', '#3f5f6a', '#c7a35d', '#506b4c', '#8b6a8f', '#d8cfb7'][Math.floor(Math.random() * 6)]));
+      x += w + 0.02;
+    }
+  }
+  mesh(merge(shelf), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.8}), room, [10, FLOOR, -11.2]).castShadow = true;
+  const pot = [paint(lathe([[0.5, 0], [0.62, 0.9], [0.66, 1.0], [0.6, 1.05]], 18), '#b06a4c')];
+  for (let k = 0; k < 9; k++) {
+    const a = (k / 9) * Math.PI * 2,
+      pts = [];
+    for (let i = 0; i <= 6; i++) {
+      const u = i / 6;
+      pts.push(new T.Vector3(Math.cos(a) * u * 1.3, 1.0 + Math.sin(u * 2.4) * 1.4, Math.sin(a) * u * 1.3));
+    }
+    pot.push(paint(tube(pts, u => 0.06 * (1 - u * 0.7), 5, false), k % 2 ? '#4d8a55' : '#6aa266'));
+  }
+  mesh(merge(pot), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.8}), room, [-14, FLOOR, -9]).castShadow = true;
+  const lampParts = [
+    paint(lathe([[0.55, 0], [0.5, 0.12], [0.08, 0.2]], 18), '#2e2a26'),
+    paint(place(new T.CylinderGeometry(0.05, 0.05, 6, 8), [0, 3.1, 0]), '#2e2a26'),
+  ];
+  mesh(merge(lampParts), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.5, metalness: 0.4}), room, [15, FLOOR, -8]);
+  mesh(lathe([[0.95, 0], [0.55, 1.1], [0.5, 1.12]], 24), mat('#f2dfb4', {emissive: '#f0b86a', emissiveIntensity: 0.9, side: T.DoubleSide}), room, [15, FLOOR + 5.6, -8]);
   const causticUniform = {time: {value: 0}};
   const causticMat = new T.ShaderMaterial({
     uniforms: causticUniform,
@@ -1125,6 +1216,16 @@ export function createWorld(canvas, state, onError) {
       }
     } else {
       radius += (targetRadius - radius) * 0.07;
+      {
+        const cyc = conditions.cycle ?? 0.3,
+          outdoor = skyAt(cyc, Math.min(state.region, 5), skyColors),
+          da = (cyc / 0.64) * Math.PI;
+        windowUniforms.top.value.copy(outdoor[0]);
+        windowUniforms.bottom.value.copy(outdoor[1]);
+        windowUniforms.sunDir.value.set(Math.cos(da), cyc < 0.64 ? Math.sin(da) : -1, 0);
+        windowUniforms.night.value = conditions.phase === 'night' ? 1 : conditions.phase === 'dusk' ? 0.4 : 0;
+        windowUniforms.time.value = clock;
+      }
       // Tank light falls from above through the water surface.
       aimShadow(0, 1.5, 0, 6.5, 22);
       sun.position.set(-4, 20, 5);
