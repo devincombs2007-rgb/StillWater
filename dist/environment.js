@@ -13,6 +13,7 @@ import {
   harborBuilding,
   gull,
   flapGull,
+  coralGeometry,
 } from './scenery.js?v=7';
 const TAU = Math.PI * 2;
 // Shoreline banks shared by the scenery, grass and the water shader's shallows.
@@ -50,6 +51,9 @@ export function createWater(parent) {
     fogDensity: {value: 0.0065},
     light: {value: 1},
     detail: {value: 1},
+    tint: {value: new T.Color('#3fc6c0')},
+    tintAmount: {value: 0},
+    reefShoal: {value: 0},
   };
   const wave = `float height(vec2 p){float a=mix(.048,.22,ocean)*swell;
     float h=sin(p.x*.45+p.y*.68+time*.9)*a+sin(p.x*.71-p.y*.32+time*.7)*a*.55+sin(p.y*1.8+time*1.1)*.018
@@ -67,7 +71,7 @@ export function createWater(parent) {
         normalW=normalize(vec3(height(v.xz-vec2(e,0.))-height(v.xz+vec2(e,0.)),2.*e,height(v.xz-vec2(0.,e))-height(v.xz+vec2(0.,e))));
         p=v;gl_Position=projectionMatrix*modelViewMatrix*vec4(v,1.);}`,
     fragmentShader: `uniform float time;uniform float ocean;uniform float rain;uniform vec3 skyTop;uniform vec3 skyHorizon;uniform vec3 sunDir;uniform vec3 sunColor;
-      uniform vec3 fogColor;uniform float fogDensity;uniform float light;uniform float detail;varying vec3 p;varying vec3 normalW;${bank}
+      uniform vec3 fogColor;uniform float fogDensity;uniform float light;uniform float detail;uniform vec3 tint;uniform float tintAmount;uniform float reefShoal;varying vec3 p;varying vec3 normalW;${bank}
       vec2 ripple(vec2 q,float t){return vec2(sin(q.x*3.1+q.y*1.3+t*1.9)+sin(q.x*5.7-q.y*4.1-t*2.7)*.5+sin(q.y*9.3+q.x*.7+t*3.9)*.25,
         cos(q.y*2.9-q.x*1.7+t*1.6)+cos(q.y*6.3+q.x*3.9-t*2.3)*.5+cos(q.x*8.7-q.y*1.1+t*4.3)*.25);}
       void main(){vec3 view=cameraPosition-p;float dist=length(view);view/=dist;
@@ -82,7 +86,7 @@ export function createWater(parent) {
         vec3 deep=mix(vec3(.03,.13,.13),vec3(.015,.11,.18),ocean),shallow=mix(vec3(.12,.3,.24),vec3(.06,.38,.42),ocean);
         float sd=shoreDist(p.xz);float zr=p.x<0.?step(-41.,p.z)*step(p.z,27.):step(-53.5,p.z)*step(p.z,21.5);float shore=ocean>.5?0.:(1.-smoothstep(-.2,3.2,sd))*zr;float lap=ocean>.5?0.:(1.-smoothstep(.0,.55,abs(sd-.15+.12*sin(p.z*.9+time*.8))))*zr;
         vec3 body=mix(deep,shallow,.25+.2*sin(p.x*.14+p.z*.18)+shore*.55);
-        body=mix(body,vec3(.42,.43,.3),shore*shore*.55);
+        body=mix(body,vec3(.42,.43,.3),shore*shore*.55);body=mix(body,tint,tintAmount);float shoal=reefShoal*smoothstep(.15,.75,sin(p.x*.13+sin(p.z*.11)*2.)*sin(p.z*.09+p.x*.05)+.25);body=mix(body,vec3(.45,.78,.7),shoal*.55);
         vec3 color=mix(body*light,sky,clamp(fres*.85+.08,0.,1.));
         float sd0=max(0.,dot(refl,sunDir));float spec=(pow(sd0,mix(260.,520.,ocean))*mix(1.8,1.1,ocean)+pow(sd0,40.)*.05)*(1.-smoothstep(25.,90.,dist)*.5);
         color+=sunColor*spec*smoothstep(-.05,.12,sunDir.y);
@@ -133,6 +137,10 @@ export function createWater(parent) {
       uniforms.ocean.value = ocean;
       uniforms.swell.value = swell;
       uniforms.rain.value += ((c.weather === 'rain' ? 1 : 0) - uniforms.rain.value) * 0.02;
+      // Reef water is clear and turquoise; the open ocean is deep blue.
+      uniforms.tint.value.set(region === 4 ? '#2fb8b4' : '#0a2a48');
+      uniforms.reefShoal.value += ((region === 4 ? 1 : 0) - uniforms.reefShoal.value) * 0.05;
+      uniforms.tintAmount.value += ((region === 4 ? 0.42 : region === 5 ? 0.45 : 0) - uniforms.tintAmount.value) * 0.05;
     },
   };
 }
@@ -310,20 +318,49 @@ export function createEnvironment(parent, state, water) {
     walkers.push(w);
   }
   // Coastal land, palms, and a small living waterfront.
-  terrain(-42, -63, 46, 42, 4, '#b5b28b', salt);
-  terrain(44, -89, 45, 35, 5, '#a1a985', salt);
+  // Each saltwater region has its own coastline: Harbor Reach a town, Sunbreak Reef a palm
+  // island with coral heads around the boat, the Open Blue nothing but horizon.
+  const harbor = new T.Group(),
+    island = new T.Group(),
+    reef = new T.Group();
+  salt.add(harbor, island, reef);
+  terrain(-42, -63, 46, 42, 4, '#b5b28b', island);
+  terrain(44, -89, 45, 35, 5, '#a1a985', harbor);
+  const coralMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.7, side: T.DoubleSide});
+  addSway(coralMat, 0.02, 0.6);
+  // Staghorn (seed % 3 === 0) and brain corals (seed % 3 === 1); sea fans stay out of sight.
+  for (const [i, seed] of [3, 6, 9, 1, 4, 7].entries()) {
+    const brain = seed % 3 === 1,
+      geo = coralGeometry(seed),
+      heads = new T.InstancedMesh(geo, coralMat, 7);
+    for (let k = 0; k < 7; k++) {
+      const a = (i * 7 + k) * 2.39,
+        d = 5 + ((i * 7 + k) % 9) * 2.6,
+        x = Math.sin(a) * d,
+        z = 6 - Math.abs(Math.cos(a)) * d * 1.4;
+      // Coral heads break the surface at low water; the shallows themselves are painted by the water shader.
+      matrix.position.set(x, (brain ? -0.62 : -0.38) - ((k * 13) % 5) * 0.05, z);
+      matrix.rotation.set(0, a, 0);
+      matrix.scale.setScalar(0.8 + ((k * 5) % 4) * 0.25);
+      matrix.updateMatrix();
+      heads.setMatrixAt(k, matrix.matrix);
+    }
+    heads.computeBoundingSphere();
+    reef.add(heads);
+  }
+
   const palmMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.8, side: T.DoubleSide});
   addSway(palmMat, 0.03, 3);
   for (let i = 0; i < 11; i++) {
     const p = new T.Mesh(palmGeometry(i + 3), palmMat);
     p.position.set(-53 + i * 2.3, 2, -64 + (i % 3) * 3);
     p.rotation.y = i * 1.3;
-    salt.add(p);
+    island.add(p);
   }
   for (let i = 0; i < 14; i++) {
     const b = harborBuilding(i + 1, glowMat);
     b.position.set(-35 + i * 3.3, 1, -79 - (i % 3) * 3);
-    salt.add(b);
+    harbor.add(b);
   }
   // Lofted skiff hull: transom stern, rising sheer to a pointed bow, painted bottom and
   // a boot stripe at the waterline, with gunwales, floorboards and thwarts inside.
@@ -478,6 +515,9 @@ export function createEnvironment(parent, state, water) {
       const ocean = region >= 3;
       fresh.visible = !ocean;
       salt.visible = ocean;
+      harbor.visible = region === 3;
+      island.visible = region === 3 || region === 4;
+      reef.visible = region === 4;
       glowMat.emissiveIntensity = c.phase === 'night' ? 1.4 : c.phase === 'dusk' ? 0.8 : 0.1;
       for (let i = 0; i < cars.length; i++) {
         const phase = (t * 0.55 + i * 7) % 28;

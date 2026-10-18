@@ -534,3 +534,46 @@ export function reed(seed = 1) {
 export function cottageModel(seed = 1) {
   return cottage(seed);
 }
+
+// --- Reef corals -----------------------------------------------------------------------
+// Three growth forms: branching staghorn, a grooved brain coral dome and a flat sea fan.
+export function coralGeometry(seed = 1) {
+  const r = rand(seed * 157 + 11),
+    kind = seed % 3,
+    palette = [['#e58a7c', '#f3b9a5'], ['#c98fd6', '#e8c3ef'], ['#e9b45a', '#f6d79a'], ['#6fc2b0', '#b5e6d8'], ['#e27aa0', '#f6b6cb']][seed % 5],
+    parts = [];
+  const tint = (a, b) => (x, y, z, out) => out.set(a).lerp(new T.Color(b), Math.min(1, Math.max(0, y / 1.4)));
+  if (kind === 0) {
+    const grow = (from, dir, len, rad, depth) => {
+      const to = from.clone().addScaledVector(dir, len),
+        mid = from.clone().lerp(to, 0.5).add(V((r() - 0.5) * 0.1, 0, (r() - 0.5) * 0.1));
+      parts.push(paint(tube([from, mid, to], u => rad * (1 - u * 0.45), 6), tint(...palette)));
+      if (depth > 0)
+        for (let k = 0; k < 2; k++) {
+          const nd = dir.clone().add(V((r() - 0.5) * 1.2, 0.35, (r() - 0.5) * 1.2)).normalize();
+          grow(to, nd, len * 0.72, rad * 0.7, depth - 1);
+        }
+    };
+    for (let k = 0; k < 3; k++) grow(V((r() - 0.5) * 0.3, 0, (r() - 0.5) * 0.3), V((r() - 0.5) * 0.6, 1, (r() - 0.5) * 0.6).normalize(), 0.45, 0.08, 3);
+  } else if (kind === 1) {
+    const dome = displace(new T.SphereGeometry(0.75, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2), 0.05, 3, seed, 2);
+    paint(dome, (x, y, z, out) => out.set(palette[0]).lerp(new T.Color(palette[1]), 0.5 + 0.5 * Math.sin(x * 26 + Math.sin(z * 9) * 3)));
+    parts.push(dome);
+  } else {
+    const fan = new T.PlaneGeometry(1.4, 1.2, 14, 12),
+      p = fan.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i),
+        y = p.getY(i) + 0.6;
+      p.setXYZ(i, x * (0.3 + y * 0.6), y, Math.sin(x * 3) * 0.08);
+    }
+    fan.computeVertexNormals();
+    paint(fan, (x, y, z, out) => out.set(palette[0]).multiplyScalar(0.8 + 0.4 * Math.abs(Math.sin(x * 30) * Math.sin(y * 26))));
+    parts.push(fan);
+    parts.push(paint(tube([V(0, 0, 0), V(0, 0.3, 0)], 0.04, 5), palette[0]));
+  }
+  return merge(parts);
+}
+export function coral(seed = 1) {
+  return new T.Mesh(coralGeometry(seed), vcMaterial('coral', {roughness: 0.7, side: T.DoubleSide}));
+}

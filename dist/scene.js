@@ -698,7 +698,7 @@ export function createWorld(canvas, state, onError) {
   }
   // Decor, plants and stones cast and catch the light from above; glass and water do not.
   tank.traverse(o => {
-    if (o.isMesh && o.material?.isMeshStandardMaterial && !o.material.transparent && o !== sand) o.castShadow = o.receiveShadow = true;
+    if (o.isMesh && o.material?.isMeshStandardMaterial && !o.material.transparent && o !== sand && !room.children.includes(o)) o.castShadow = o.receiveShadow = true;
   });
   gravel.castShadow = false;
   const bubblesGeo = new T.BufferGeometry();
@@ -839,7 +839,9 @@ export function createWorld(canvas, state, onError) {
         disposeFish(old.mesh);
       }
       const f = species.find(x => x.id === resident.id);
-      const model = shade(createFish(f));
+      const model = createFish(f);
+      // Only the body casts: fins add many draw calls to the shadow pass for little visible gain.
+      model.userData.body.castShadow = true;
       fishGroup.add(model);
       model.userData.uid = resident.uid;
       const motion = makeSwimmer(i, state.fish.length);
@@ -1182,6 +1184,8 @@ export function createWorld(canvas, state, onError) {
       hemi.intensity += ((night ? 0.85 : dusk ? 1.5 : 1.9) - hemi.intensity) * blend;
       fill.intensity = night ? 0.45 : 0.9;
       const rangeLight = night ? 0.3 : dusk ? 0.62 : 0.92;
+      // Far out on the Open Blue there is no land in sight.
+      for (const r of ranges) r.mesh.visible = titleMode || region !== 5;
       for (const r of ranges)
         r.mesh.material.color.copy(r.base).multiplyScalar(rangeLight).lerp(gradient.uniforms.bottom.value, r.haze);
       scene.fog.color.copy(gradient.uniforms.bottom.value).multiplyScalar(0.78);
