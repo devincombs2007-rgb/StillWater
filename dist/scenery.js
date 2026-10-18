@@ -577,3 +577,34 @@ export function coralGeometry(seed = 1) {
 export function coral(seed = 1) {
   return new T.Mesh(coralGeometry(seed), vcMaterial('coral', {roughness: 0.7, side: T.DoubleSide}));
 }
+
+// --- Lily pads -----------------------------------------------------------------------
+// A notched floating leaf with radiating veins and a lifted rim; some carry a flower.
+export function lilyPadGeometry(seed = 1) {
+  const r = rand(seed * 29 + 3),
+    leaf = new T.CircleGeometry(0.45 + r() * 0.25, 28, 0.25, Math.PI * 2 - 0.5),
+    p = leaf.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i),
+      y = p.getY(i),
+      d = Math.hypot(x, y);
+    p.setZ(i, Math.pow(d / 0.7, 4) * 0.05);
+  }
+  leaf.rotateX(-Math.PI / 2);
+  leaf.computeVertexNormals();
+  paint(leaf, (x, y, z, out) => {
+    const a = Math.atan2(z, x),
+      d = Math.hypot(x, z);
+    out.set('#4f7f45').multiplyScalar(0.85 + 0.15 * Math.cos(a * 14) * Math.min(1, d * 3) + (d > 0.4 ? 0.12 : 0));
+  });
+  const parts = [leaf];
+  if (r() < 0.45) {
+    const petals = ['#f3d7e0', '#fff4e6', '#f6c3d2'][seed % 3];
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      parts.push(paint(place(new T.SphereGeometry(0.07, 8, 6), [Math.cos(a) * 0.07, 0.07, Math.sin(a) * 0.07], [0.5, a, 0], [0.6, 0.35, 1.4]), petals));
+    }
+    parts.push(paint(place(new T.SphereGeometry(0.035, 8, 6), [0, 0.1, 0]), '#e8c04f'));
+  }
+  return merge(parts);
+}

@@ -14,6 +14,7 @@ import {
   gull,
   flapGull,
   coralGeometry,
+  lilyPadGeometry,
 } from './scenery.js?v=7';
 const TAU = Math.PI * 2;
 // Shoreline banks shared by the scenery, grass and the water shader's shallows.
@@ -54,6 +55,8 @@ export function createWater(parent) {
     tint: {value: new T.Color('#3fc6c0')},
     tintAmount: {value: 0},
     reefShoal: {value: 0},
+    current: {value: 0},
+    biolume: {value: 0},
   };
   const wave = `float height(vec2 p){float a=mix(.048,.22,ocean)*swell;
     float h=sin(p.x*.45+p.y*.68+time*.9)*a+sin(p.x*.71-p.y*.32+time*.7)*a*.55+sin(p.y*1.8+time*1.1)*.018
@@ -71,7 +74,7 @@ export function createWater(parent) {
         normalW=normalize(vec3(height(v.xz-vec2(e,0.))-height(v.xz+vec2(e,0.)),2.*e,height(v.xz-vec2(0.,e))-height(v.xz+vec2(0.,e))));
         p=v;gl_Position=projectionMatrix*modelViewMatrix*vec4(v,1.);}`,
     fragmentShader: `uniform float time;uniform float ocean;uniform float rain;uniform vec3 skyTop;uniform vec3 skyHorizon;uniform vec3 sunDir;uniform vec3 sunColor;
-      uniform vec3 fogColor;uniform float fogDensity;uniform float light;uniform float detail;uniform vec3 tint;uniform float tintAmount;uniform float reefShoal;varying vec3 p;varying vec3 normalW;${bank}
+      uniform vec3 fogColor;uniform float fogDensity;uniform float light;uniform float detail;uniform vec3 tint;uniform float tintAmount;uniform float reefShoal;uniform float current;uniform float biolume;varying vec3 p;varying vec3 normalW;${bank}
       vec2 ripple(vec2 q,float t){return vec2(sin(q.x*3.1+q.y*1.3+t*1.9)+sin(q.x*5.7-q.y*4.1-t*2.7)*.5+sin(q.y*9.3+q.x*.7+t*3.9)*.25,
         cos(q.y*2.9-q.x*1.7+t*1.6)+cos(q.y*6.3+q.x*3.9-t*2.3)*.5+cos(q.x*8.7-q.y*1.1+t*4.3)*.25);}
       void main(){vec3 view=cameraPosition-p;float dist=length(view);view/=dist;
@@ -92,6 +95,10 @@ export function createWater(parent) {
         color+=sunColor*spec*smoothstep(-.05,.12,sunDir.y);
         float crest=ocean*smoothstep(.24,.42,p.y)*.35+lap*(.55+.45*sin(p.z*2.3+time*1.7))*.3;
         color+=crest*vec3(.75,.82,.8)*max(.35,light);
+        // Fernwater's current: foam streaks drifting downstream (toward the angler).
+        if(current>.01){float streak=pow(.5+.5*sin(p.x*1.9+sin(p.z*.35+p.x*.2)*1.6),14.)*(.5+.5*sin((p.z-time*1.7)*.8+sin(p.x*.7)*2.));color+=streak*current*.12*max(.4,light)*(1.-smoothstep(20.,60.,dist));}
+        // Starlit Cove: specks of blue bioluminescence that twinkle at night.
+        if(biolume>.01){vec2 q=p.xz*3.;vec2 cell=floor(q);float h=fract(sin(dot(cell,vec2(41.3,289.1)))*43758.5);vec2 c=fract(q)-vec2(fract(h*7.3),fract(h*3.1))*.6-.2;float dot=smoothstep(.13,0.,length(c))*step(.92,h);float tw=.5+.5*sin(time*2.+h*40.);color+=vec3(.3,.8,1.)*dot*tw*biolume*1.6*(1.-smoothstep(8.,40.,dist));}
         float fog=1.-exp(-fogDensity*fogDensity*dist*dist);gl_FragColor=vec4(mix(color,fogColor,fog),1.);}`,
   });
   const geo = new T.PlaneGeometry(260, 230, 192, 160);
@@ -139,6 +146,8 @@ export function createWater(parent) {
       uniforms.rain.value += ((c.weather === 'rain' ? 1 : 0) - uniforms.rain.value) * 0.02;
       // Reef water is clear and turquoise; the open ocean is deep blue.
       uniforms.tint.value.set(region === 4 ? '#2fb8b4' : '#0a2a48');
+      uniforms.current.value += ((region === 1 ? 1 : 0) - uniforms.current.value) * 0.05;
+      uniforms.biolume.value += ((region === 2 ? (c.phase === 'night' ? 1.4 : c.phase === 'dusk' ? 0.6 : 0.12) : 0) - uniforms.biolume.value) * 0.05;
       uniforms.reefShoal.value += ((region === 4 ? 1 : 0) - uniforms.reefShoal.value) * 0.05;
       uniforms.tintAmount.value += ((region === 4 ? 0.42 : region === 5 ? 0.45 : 0) - uniforms.tintAmount.value) * 0.05;
     },
@@ -265,6 +274,22 @@ export function createEnvironment(parent, state, water) {
     matrix.updateMatrix();
     grass.setMatrixAt(i, matrix.matrix);
   }
+  // Lily pads drift in Willow Lake's shallows and ride the real wave height.
+  const lilyGeo = [1, 2, 3].map(k => lilyPadGeometry(k)),
+    lilies = lilyGeo.map(g => new T.InstancedMesh(g, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.6, side: T.DoubleSide}), 12)),
+    lilySpots = [];
+  for (let i = 0; i < 36; i++) {
+    const side = i % 2 ? -1 : 1,
+      x = side * (6.2 + ((i * 37) % 30) / 10),
+      z = -16 + ((i * 53) % 190) / 10;
+    lilySpots.push({x, z, rot: i * 2.1, kind: i % 3, index: Math.floor(i / 3), scale: 0.8 + ((i * 7) % 5) * 0.12});
+  }
+  const lilyGroup = new T.Group();
+  for (const l of lilies) {
+    l.receiveShadow = true;
+    lilyGroup.add(l);
+  }
+  fresh.add(lilyGroup);
   // Shoreline boulders: weathered, mossy on top, settled into the ground.
   const stoneMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}),
     stoneKinds = [1, 2, 3, 4].map(k => rockGeometry(k)),
@@ -516,6 +541,23 @@ export function createEnvironment(parent, state, water) {
       fresh.visible = !ocean;
       salt.visible = ocean;
       harbor.visible = region === 3;
+      lilyGroup.visible = region === 0;
+      if (lilyGroup.visible) {
+        for (const s of lilySpots) {
+          const y = water.height(s.x, s.z, t),
+            tiltX = (water.height(s.x, s.z + 0.4, t) - y) * 2,
+            tiltZ = (water.height(s.x + 0.4, s.z, t) - y) * 2;
+          matrix.position.set(s.x, y + 0.015, s.z);
+          matrix.rotation.set(-tiltX, s.rot + Math.sin(t * 0.2 + s.rot) * 0.1, tiltZ);
+          matrix.scale.setScalar(s.scale);
+          matrix.updateMatrix();
+          lilies[s.kind].setMatrixAt(s.index, matrix.matrix);
+        }
+        for (const l of lilies) {
+          l.instanceMatrix.needsUpdate = true;
+          l.computeBoundingSphere();
+        }
+      }
       island.visible = region === 3 || region === 4;
       reef.visible = region === 4;
       glowMat.emissiveIntensity = c.phase === 'night' ? 1.4 : c.phase === 'dusk' ? 0.8 : 0.1;
