@@ -191,6 +191,27 @@ export function createAudio() {
         note(950 + Math.random() * 450, t + i * 0.08, 0.16, 0.035, (Math.random() - 0.5) * 0.8);
     } else if (type === 'reel') {
       for (let i = 0; i < 4; i++) note(240 + i * 35, t + i * 0.035, 0.05, 0.035);
+    } else if (type === 'thunder') {
+      // Distant thunder: a long low-passed rumble that swells and rolls away.
+      const src = ctx.createBufferSource(),
+        filter = ctx.createBiquadFilter(),
+        gain = ctx.createGain(),
+        d = 3.2 + Math.random() * 1.5;
+      src.buffer = noiseBuffer;
+      src.loop = true;
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(260, t);
+      filter.frequency.exponentialRampToValueAtTime(70, t + d);
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.linearRampToValueAtTime(0.32, t + 0.35);
+      gain.gain.setTargetAtTime(0.18, t + 0.5, 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + d);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(master);
+      src.start(t);
+      src.stop(t + d + 0.1);
+      note(46, t + 0.1, d * 0.8, 0.07, 0, 'sine', 0.85);
     } else if (type === 'ui') note(650, t, 0.055, 0.018, 0, 'sine', 1.25);
     else note(430, t, 0.3, 0.04);
   }

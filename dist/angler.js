@@ -2,6 +2,7 @@ import * as T from './assets/three.module.js';
 import {surfaceTexture} from './textures.js?v=8';
 import {APPAREL} from './economy.js?v=8';
 import {lathe, displace, tube, consolidate, loft} from './models.js?v=8';
+import {rodLook, lineLook} from './looks.js?v=8';
 export const SKINS = ['#edc7a6', '#d3a37e', '#b17f5c', '#875e45', '#624735'],
   HAIRS = ['#302b29', '#65503b', '#a58455', '#352b32'],
   EYES = ['#5a3d2b', '#7a6a3a', '#4f7a4e', '#4c6f8e', '#6d7a80'],
@@ -329,6 +330,7 @@ export function createAngler(parent, state) {
     chrome = std('#d4d7cf', {metalness: 0.9, roughness: 0.18}),
     cork = std('#b4956f', {map: surfaceTexture('cork'), roughness: 0.95}),
     reelBody = std('#2f3a38', {metalness: 0.5, roughness: 0.35}),
+    eva = std('#1f2224', {roughness: 0.82}),
     lineColor = std('#e9e3c2', {roughness: 0.6});
   const rodSegments = Array.from({length: 14}, (_, i) => {
     const r0 = 0.017 - i * 0.00085,
@@ -631,6 +633,25 @@ export function createAngler(parent, state) {
   });
   stubbleMat.userData = {};
   consolidate(g);
+  // Grip meshes swap between cork and EVA foam with the rod tier.
+  const gripMeshes = [];
+  g.traverse(o => o.isMesh && o.material === cork && gripMeshes.push(o));
+  let gearKey = '';
+  function setGear(rodTier = state.rod || 0, lineTier = state.line || 0) {
+    const key = rodTier + ':' + lineTier;
+    if (key === gearKey) return;
+    gearKey = key;
+    const look = rodLook(rodTier);
+    blank.color.set(look.blank);
+    blank.metalness = look.metal;
+    blank.roughness = look.rough;
+    wrap.color.set(look.wrap);
+    chrome.color.set(look.reelTrim);
+    reelBody.color.set(look.reel);
+    lineColor.color.set(lineLook(lineTier).color);
+    for (const m of gripMeshes) m.material = look.grip === 'eva' ? eva : cork;
+  }
+  setGear();
   refresh();
   update(0.02, 0, 'idle');
   return {
@@ -645,6 +666,7 @@ export function createAngler(parent, state) {
     get hang() {
       return hangAnchor;
     },
+    setGear,
     setOcean(on) {
       g.position.y = on ? 0.72 : 0.3;
     },

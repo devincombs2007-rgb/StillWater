@@ -3,6 +3,7 @@ import {surfaceTexture} from './textures.js?v=8';
 import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=8';
 import {BOATS} from './economy.js?v=8';
 import {createLand, landHeight as regionLand, landDistance} from './land.js?v=8';
+import {createAmbience} from './ambience.js?v=8';
 import {
   broadleafGeometry,
   pineGeometry,
@@ -156,12 +157,12 @@ export function createWater(parent) {
     },
     update(t, region, c) {
       ocean = region >= 3 ? 1 : 0;
-      wind += ((c.weather === 'wind' ? 1 : 0) - wind) * 0.02;
+      wind += ((c.weather === 'wind' ? 1 : c.weather === 'storm' ? 1.3 : 0) - wind) * 0.02;
       swell = 1 + wind * 0.45;
       uniforms.time.value = t;
       uniforms.ocean.value = ocean;
       uniforms.swell.value = swell;
-      uniforms.rain.value += ((c.weather === 'rain' ? 1 : 0) - uniforms.rain.value) * 0.02;
+      uniforms.rain.value += ((c.weather === 'rain' ? 1 : c.weather === 'storm' ? 1.35 : 0) - uniforms.rain.value) * 0.02;
       // Reef water is clear and turquoise; the open ocean is deep blue.
       uniforms.tint.value.set(region === 4 ? '#2fb8b4' : '#0a2a48');
       uniforms.current.value += ((region === 1 ? 1 : 0) - uniforms.current.value) * 0.05;
@@ -474,6 +475,7 @@ export function createEnvironment(parent, state, water) {
   road.receiveShadow = true;
   fresh.add(road);
   // Cottages stand back from the road on the inland side, facing it and the lake.
+  const cottageList = [];
   for (let i = 0; i < 7; i++) {
     const u = 0.1 + i * 0.05 + (i % 2) * 0.015,
       q = sideOf(u, 15 + (i % 3) * 2.5),
@@ -483,7 +485,9 @@ export function createEnvironment(parent, state, water) {
     h.scale.setScalar(1.55 + ((i * 37) % 10) * 0.05);
     h.rotation.y = Math.atan2(t.z, -t.x) + ((i % 3) - 1) * 0.12;
     fresh.add(h);
+    cottageList.push(h);
   }
+  const ambience = createAmbience({fresh, salt}, {ground, roadCurve, roadLength, sideOf, cottages: cottageList});
   const cars = [];
   for (let i = 0; i < 4; i++) {
     const c = carModel(i + 1);
@@ -660,15 +664,19 @@ export function createEnvironment(parent, state, water) {
   }
   shoreRocks.computeBoundingSphere();
   titleShore.add(shoreRocks);
-  const rainGeo = new T.BufferGeometry(),
-    rainPos = [];
-  for (let i = 0; i < 500; i++)
-    rainPos.push((Math.random() - 0.5) * 40, Math.random() * 15, (Math.random() - 0.5) * 45);
-  rainGeo.setAttribute('position', new T.Float32BufferAttribute(rainPos, 3));
-  const rain = new T.Points(
-    rainGeo,
-    new T.PointsMaterial({color: '#b4cbd0', size: 0.035, transparent: true, depthWrite: false, opacity: 0.5}),
-  );
+  // Rain as falling streaks round the angler (a short line per drop, slanted by the wind).
+  const DROPS = 900,
+    rainGeo = new T.BufferGeometry(),
+    rainPos = new Float32Array(DROPS * 6);
+  for (let i = 0; i < DROPS; i++) {
+    const x = (Math.random() - 0.5) * 44,
+      y = Math.random() * 16,
+      z = 8 + (Math.random() - 0.5) * 46;
+    rainPos.set([x, y, z, x, y + 0.45, z], i * 6);
+  }
+  rainGeo.setAttribute('position', new T.BufferAttribute(rainPos, 3));
+  const rain = new T.LineSegments(rainGeo, new T.LineBasicMaterial({color: '#b9cfd4', transparent: true, depthWrite: false, opacity: 0.32}));
+  rain.frustumCulled = false;
   common.add(rain);
   rain.visible = false;
   const sun = new T.Mesh(new T.SphereGeometry(2.5, 24, 16), new T.MeshBasicMaterial({color: '#ffe1a0'}));
@@ -688,7 +696,8 @@ export function createEnvironment(parent, state, water) {
       land.setDetail(quality);
     },
     update(dt, t, region, c) {
-      updateSway(t, c.weather === 'wind');
+      updateSway(t, c.weather === 'wind' || c.weather === 'storm');
+      ambience.update(dt, t, region, c);
       currentRegion = region;
       const ocean = region >= 3;
       fresh.visible = !ocean;
@@ -714,7 +723,7 @@ export function createEnvironment(parent, state, water) {
       island.visible = region === 3 || region === 4;
       reef.visible = region === 4;
       glowMat.emissiveIntensity = c.phase === 'night' ? 1.4 : c.phase === 'dusk' ? 0.8 : 0.1;
-      const lamps = c.phase === 'night' ? 1 : c.phase === 'dusk' ? 0.55 : c.weather === 'rain' || c.weather === 'mist' ? 0.3 : 0.02;
+      const lamps = c.phase === 'night' ? 1 : c.phase === 'dusk' ? 0.55 : ['rain', 'mist', 'storm', 'overcast'].includes(c.weather) ? 0.3 : 0.02;
       for (const car of cars) {
         car.userData.lights[0].emissiveIntensity = 0.1 + lamps * 3;
         car.userData.lights[1].emissiveIntensity = 0.15 + lamps * 2.2;
@@ -790,15 +799,33 @@ export function createEnvironment(parent, state, water) {
       anchored.position.y = motion.y;
       anchored.rotation.x = motion.rx;
       anchored.rotation.z = motion.rz;
-      rain.visible = c.weather === 'rain';
+      const storm = c.weather === 'storm';
+      rain.visible = c.weather === 'rain' || storm;
       if (rain.visible) {
-        const a = rainGeo.attributes.position;
-        for (let i = 0; i < a.count; i++) {
-          let y = a.getY(i) - dt * 9;
-          if (y < 0) y = 15;
-          a.setY(i, y);
-          a.setX(i, a.getX(i) + dt * 0.4);
+        const p = rainPos,
+          fall = dt * (storm ? 17 : 11),
+          drift = dt * (storm ? 3.2 : 0.6),
+          slant = storm ? 0.16 : 0.04,
+          len = storm ? 0.75 : 0.5,
+          shown = storm ? DROPS : Math.round(DROPS * 0.6);
+        rain.geometry.setDrawRange(0, shown * 2);
+        rain.material.opacity = storm ? 0.42 : 0.3;
+        for (let i = 0; i < shown; i++) {
+          const k = i * 6;
+          let x = p[k] + drift,
+            y = p[k + 1] - fall;
+          if (y < 0) {
+            y = 14 + Math.random() * 2;
+            x = (Math.random() - 0.5) * 44;
+          }
+          if (x > 22) x -= 44;
+          p[k] = x;
+          p[k + 1] = y;
+          p[k + 3] = x - slant * len * 3;
+          p[k + 4] = y + len;
+          p[k + 5] = p[k + 2];
         }
+        const a = rainGeo.attributes.position;
         a.needsUpdate = true;
       }
       const angle = (c.cycle / 0.64) * Math.PI;

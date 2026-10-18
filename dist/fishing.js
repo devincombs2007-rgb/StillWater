@@ -1,15 +1,46 @@
 import {BAITS, LINES, effectiveRod, fishWeight, rollFish} from './economy.js?v=8';
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+// Weather by water: each region has its own climate. A spell of weather lasts about seven
+// minutes and the scene eases from one spell into the next.
+const CLIMATES = [
+  {clear: 30, cloudy: 22, overcast: 12, mist: 12, rain: 14, storm: 4, wind: 6},
+  {clear: 22, cloudy: 20, overcast: 14, mist: 16, rain: 18, storm: 4, wind: 6},
+  {clear: 24, cloudy: 16, overcast: 12, mist: 24, rain: 14, storm: 4, wind: 6},
+  {clear: 24, cloudy: 22, overcast: 14, mist: 10, rain: 12, storm: 6, wind: 12},
+  {clear: 42, cloudy: 22, overcast: 6, mist: 4, rain: 12, storm: 8, wind: 6},
+  {clear: 30, cloudy: 18, overcast: 10, mist: 4, rain: 12, storm: 10, wind: 16},
+];
+const BASE_TEMP = [15, 13, 11, 17, 27, 22],
+  WEATHER_TEMP = {clear: 1.5, cloudy: 0, overcast: -1, mist: -2, rain: -3, storm: -4, wind: -2},
+  WEATHER_WIND = {clear: 6, cloudy: 10, overcast: 12, mist: 3, rain: 14, storm: 42, wind: 32},
+  WEATHER_COVER = {clear: 0.08, cloudy: 0.45, overcast: 0.9, mist: 0.7, rain: 0.95, storm: 1, wind: 0.35};
+const hash = n => Math.abs(Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1;
 export function worldConditions(now = Date.now(), region = 0) {
   const cycle = (now % 1200000) / 1200000,
     phase = cycle < 0.12 ? 'dawn' : cycle < 0.51 ? 'day' : cycle < 0.64 ? 'dusk' : 'night';
-  const bucket = Math.floor(now / 300000),
-    h = Math.abs(Math.sin(bucket * 127.1 + region * 31.7) * 43758.5453) % 1,
-    weather = h < 0.45 ? 'clear' : h < 0.69 ? 'mist' : h < 0.88 ? 'rain' : 'wind';
-  const moon = (Math.floor(now / 86400000) % 8) / 8;
+  const spell = Math.floor(now / 420000),
+    climate = CLIMATES[region] || CLIMATES[0],
+    total = Object.values(climate).reduce((a, b) => a + b, 0);
+  let pick = hash(spell * 1.37 + region * 31.7) * total,
+    weather = 'clear';
+  for (const [w, weight] of Object.entries(climate)) {
+    if ((pick -= weight) <= 0) {
+      weather = w;
+      break;
+    }
+  }
+  const moon = (Math.floor(now / 86400000) % 8) / 8,
+    day = Math.floor(now / 1200000);
+  // Temperature: the water's climate, warmest early afternoon and coldest before dawn,
+  // shifted by the weather and by a slow day-to-day drift.
+  const tempC =
+    Math.round(
+      (BASE_TEMP[region] + 5 * Math.sin((cycle - 0.15) * Math.PI * 2) + (WEATHER_TEMP[weather] || 0) * (phase === 'night' && weather === 'clear' ? -1 : 1) + Math.sin(day * 1.7 + region) * 2.5) * 10,
+    ) / 10;
+  const windKmh = Math.round((WEATHER_WIND[weather] || 8) + (hash(spell + 9.1) - 0.5) * 8);
   const rarity =
     (phase === 'dawn' || phase === 'dusk' ? 1.22 : phase === 'night' ? 1.12 : 1) *
-    (weather === 'rain' && region < 3 ? 1.18 : weather === 'mist' ? 1.08 : 1) *
+    (weather === 'rain' && region < 3 ? 1.18 : weather === 'mist' ? 1.08 : weather === 'overcast' ? 1.06 : weather === 'storm' ? 1.22 : 1) *
     (moon > 0.3 && moon < 0.7 ? 1.08 : 1);
   return {
     cycle,
@@ -17,10 +48,15 @@ export function worldConditions(now = Date.now(), region = 0) {
     weather,
     moon,
     rarity,
-    bite: weather === 'wind' ? 0.83 : weather === 'rain' ? 1.12 : 1,
-    swell: region >= 3 ? (weather === 'wind' ? 1.4 : 1) : 0.2,
+    tempC,
+    windKmh,
+    cover: WEATHER_COVER[weather] ?? 0.3,
+    bite: {wind: 0.83, rain: 1.12, overcast: 1.06, cloudy: 1.03, storm: 0.88}[weather] || 1,
+    swell: region >= 3 ? (weather === 'storm' ? 1.75 : weather === 'wind' ? 1.4 : 1) : weather === 'storm' ? 0.32 : 0.2,
   };
 }
+// How the weather reads to the player.
+export const WEATHER_NAMES = {clear: 'Clear', cloudy: 'Partly cloudy', overcast: 'Overcast', mist: 'Fog', rain: 'Rain', storm: 'Storm', wind: 'Windy'};
 export function startEncounter(s, conditions, rng = Math.random) {
   let bait = BAITS[s.bait] || BAITS[0];
   if (!s.ownedBaits.includes(bait.id)) {

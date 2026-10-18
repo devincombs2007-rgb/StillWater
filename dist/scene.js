@@ -5,7 +5,7 @@ import {createWater, createEnvironment, addSway} from './environment.js?v=8';
 import {createAngler} from './angler.js?v=8';
 import {createTackle} from './tackle.js?v=8';
 import {surfaceTexture, cloudTexture, setAnisotropy} from './textures.js?v=8';
-import {rockGeometry, dockGeometry, lantern, reedGeometry} from './scenery.js?v=8';
+import {rockGeometry, dockGeometry, lantern, reedGeometry, coralGeometry} from './scenery.js?v=8';
 import {place, merge, fbm, paint, tube, displace, lathe} from './models.js?v=8';
 import {createTankSurface} from './surface.js?v=8';
 import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=8';
@@ -174,14 +174,15 @@ export function createWorld(canvas, state, onError) {
   // A loose ring of drifting clouds, lit by the same sky palette as everything else.
   const clouds = [],
     cloudGeo = new T.PlaneGeometry(1, 0.5);
-  for (let i = 0; i < 11; i++) {
+  // Eighteen clouds; how many show, and how dark they are, follows the weather's cover.
+  for (let i = 0; i < 18; i++) {
     const m = new T.Mesh(
       cloudGeo,
       new T.MeshBasicMaterial({map: cloudTexture((i % 4) + 1), transparent: true, depthWrite: false, fog: false, opacity: 0.85}),
     );
     const size = 38 + ((i * 37) % 30);
     m.scale.set(size, size, 1);
-    m.userData = {angle: -2.6 + i * 0.48 + Math.sin(i * 3.1) * 0.15, height: 34 + ((i * 13) % 22), dist: 150 + ((i * 17) % 18)};
+    m.userData = {angle: -2.6 + i * 0.37 + Math.sin(i * 3.1) * 0.15, height: 30 + ((i * 13) % 26), dist: 140 + ((i * 17) % 30), order: (i * 7) % 18};
     skyLake.add(m);
     clouds.push(m);
   }
@@ -248,6 +249,10 @@ export function createWorld(canvas, state, onError) {
   skyLake.add(surroundings.sunDisc);
   const angler = createAngler(lake, state);
   let soundCallback = () => {};
+  // Smoothed weather the scene draws (conditions change in steps; the sky does not).
+  const weather = {cover: 0.3, storm: 0, wind: 8};
+  let flash = 0,
+    nextFlash = 0;
   const tackle = createTackle(lake, waterSystem.height, (x, z, t, impact, kind = 'land') => {
     const y = waterSystem.height(x, z, t);
     if (kind === 'nibble') {
@@ -385,21 +390,17 @@ export function createWorld(canvas, state, onError) {
     }
   }
   // An actual three-dimensional glass aquarium, with mesh fish and orbit controls.
-  // Furniture-grade stand: a wooden cabinet with panelled doors, plinth and top lip.
-  const stand = [];
-  const woodTone = (x, y, z, out) => out.set('#5a4231').multiplyScalar(0.85 + fbm(x * 0.8, y * 9, z * 0.8, 3) * 0.35);
-  stand.push(paint(place(new T.BoxGeometry(9.7, 2.6, 5.6, 8, 4, 4), [0, -1.25, 0]), woodTone));
-  stand.push(paint(place(new T.BoxGeometry(9.95, 0.16, 5.85), [0, 0.0, 0]), '#3f2e22'));
-  stand.push(paint(place(new T.BoxGeometry(9.9, 0.22, 5.8), [0, -2.55, 0]), '#33261c'));
-  for (let k = 0; k < 4; k++) {
-    const x = -3.6 + k * 2.4;
-    stand.push(paint(place(new T.BoxGeometry(2.1, 1.9, 0.08), [x, -1.25, 2.82]), (xx, y, z, out) => woodTone(xx, y, z, out).multiplyScalar(1.12)));
-    stand.push(paint(place(new T.BoxGeometry(1.7, 1.5, 0.06), [x, -1.25, 2.86]), woodTone));
-    stand.push(paint(place(new T.SphereGeometry(0.06, 8, 6), [x + (k % 2 ? -0.75 : 0.75), -1.15, 2.92]), '#c9a86a'));
-  }
-  shade(mesh(merge(stand), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.55}), tank), false, true);
-  // Inner floor slab under the substrate.
-  mesh(geoBox, mat('#2e3d38'), tank, [0, 0.12, 0], [9.2, 0.12, 5.2]);
+  // Each tank tier is a different vessel: wider and deeper (the height, and so the water
+  // line, stays the same), on a better cabinet, with better trim and lighting.
+  const C = c => new T.Color(c);
+  const TANK_TIERS = [
+    {w: 9.3, d: 5.3, wood: '#5a4231', trim: '#3a403c', metal: 0.65, rough: 0.3},
+    {w: 11.6, d: 5.9, wood: '#4a3326', trim: '#8f9893', metal: 0.85, rough: 0.22, bar: true},
+    {w: 14, d: 6.5, wood: '#7a5a3a', trim: '#b89255', metal: 0.9, rough: 0.25, bar: true, hood: true, backdrop: true},
+    {w: 17.2, d: 7.2, wood: '#3d4240', trim: '#151819', metal: 0.2, rough: 0.5, rimless: true, backdrop: true, reef: true, pendants: true},
+  ];
+  const vessel = new T.Group();
+  tank.add(vessel);
   const glassMat = new T.MeshPhysicalMaterial({
     color: '#a5e3da',
     transparent: true,
@@ -409,21 +410,89 @@ export function createWorld(canvas, state, onError) {
     side: T.DoubleSide,
     depthWrite: false,
   });
-  const glass = mesh(new T.BoxGeometry(9.3, 4.9, 5.3), glassMat, tank, [0, 2.57, 0]);
-  const edges = new T.LineSegments(
-    new T.EdgesGeometry(glass.geometry),
-    new T.LineBasicMaterial({color: '#a3cebd', transparent: true, depthWrite: false, opacity: 0.4}),
-  );
-  edges.position.copy(glass.position);
-  tank.add(edges);
-  // Brushed metal trim on every edge of the glass box.
-  const trim = [];
-  for (const top of [0.15, 5.03]) {
-    for (const z of [-2.67, 2.67]) trim.push(place(new T.BoxGeometry(9.5, 0.09, 0.09), [0, top, z]));
-    for (const x of [-4.71, 4.71]) trim.push(place(new T.BoxGeometry(0.09, 0.09, 5.3), [x, top, 0]));
+  const barGlow = mat('#dff4ff', {emissive: '#cfeeff', emissiveIntensity: 1.4});
+  function buildVessel(tier) {
+    for (const o of [...vessel.children]) {
+      vessel.remove(o);
+      o.traverse(m => m.geometry?.dispose());
+    }
+    const look = TANK_TIERS[tier],
+      W = look.w,
+      D = look.d,
+      stand = [],
+      woodTone = (x, y, z, out) => out.set(look.wood).multiplyScalar(0.85 + fbm(x * 0.8, y * 9, z * 0.8, 3) * 0.35);
+    // Furniture-grade stand: a cabinet with panelled doors, plinth and top lip (stone-clad for the largest).
+    stand.push(paint(place(new T.BoxGeometry(W + 0.4, 2.6, D + 0.3, 8, 4, 4), [0, -1.25, 0]), woodTone));
+    stand.push(paint(place(new T.BoxGeometry(W + 0.65, 0.16, D + 0.55), [0, 0.0, 0]), C(look.wood).multiplyScalar(0.7)));
+    stand.push(paint(place(new T.BoxGeometry(W + 0.6, 0.22, D + 0.5), [0, -2.55, 0]), C(look.wood).multiplyScalar(0.58)));
+    const doors = Math.max(4, Math.round(W / 2.4)),
+      span = (W + 0.1) / doors;
+    for (let k = 0; k < doors; k++) {
+      const x = -W / 2 + span * (k + 0.5) - 0.05;
+      stand.push(paint(place(new T.BoxGeometry(span - 0.3, 1.9, 0.08), [x, -1.25, D / 2 + 0.17]), (xx, y, z, out) => woodTone(xx, y, z, out).multiplyScalar(1.12)));
+      stand.push(paint(place(new T.BoxGeometry(span - 0.7, 1.5, 0.06), [x, -1.25, D / 2 + 0.21]), woodTone));
+      stand.push(paint(place(new T.SphereGeometry(0.06, 8, 6), [x + (k % 2 ? -1 : 1) * (span / 2 - 0.45), -1.15, D / 2 + 0.27]), look.trim === '#151819' ? '#9aa09c' : '#c9a86a'));
+    }
+    shade(mesh(merge(stand), new T.MeshStandardMaterial({vertexColors: true, roughness: tier === 3 ? 0.85 : 0.55}), vessel), false, true);
+    mesh(geoBox, mat('#2e3d38'), vessel, [0, 0.12, 0], [W - 0.1, 0.12, D - 0.1]);
+    const glass = mesh(new T.BoxGeometry(W, 4.9, D), glassMat, vessel, [0, 2.57, 0]);
+    const edges = new T.LineSegments(
+      new T.EdgesGeometry(glass.geometry),
+      new T.LineBasicMaterial({color: '#a3cebd', transparent: true, depthWrite: false, opacity: look.rimless ? 0.25 : 0.4}),
+    );
+    edges.position.copy(glass.position);
+    vessel.add(edges);
+    // Trim on every edge of the glass box; the largest tank is rimless with fine black seams.
+    const t = look.rimless ? 0.035 : 0.09,
+      trim = [];
+    for (const top of [0.15, 5.03]) {
+      for (const z of [-D / 2 - 0.02, D / 2 + 0.02]) trim.push(place(new T.BoxGeometry(W + 0.2, t, t), [0, top, z]));
+      for (const x of [-W / 2 - 0.06, W / 2 + 0.06]) trim.push(place(new T.BoxGeometry(t, t, D), [x, top, 0]));
+    }
+    for (const x of [-W / 2 - 0.06, W / 2 + 0.06]) for (const z of [-D / 2 - 0.02, D / 2 + 0.02]) trim.push(place(new T.BoxGeometry(t, 4.9, t), [x, 2.59, z]));
+    mesh(merge(trim), mat(look.trim, {metalness: look.metal, roughness: look.rough}), vessel);
+    // LED light bar along the top back edge.
+    if (look.bar) mesh(geoBox, barGlow, vessel, [0, 5.12, -D / 2 + 0.35], [W - 0.6, 0.06, 0.18]);
+    // Conservatory hood: a timber canopy over the tank with lamps glowing inside.
+    if (look.hood) {
+      mesh(geoBox, mat(look.wood, {roughness: 0.5}), vessel, [0, 5.62, 0], [W + 0.5, 0.75, D + 0.4]);
+      mesh(geoBox, mat('#2b2620'), vessel, [0, 5.24, 0], [W + 0.3, 0.04, D + 0.2]);
+      for (let k = 0; k < 4; k++) mesh(geoSphere, barGlow, vessel, [-W / 2 + (W / 4) * (k + 0.5), 5.22, 0], [0.32, 0.05, 0.32]);
+    }
+    // Pendant lamps hanging over the rimless tank.
+    if (look.pendants)
+      for (let k = 0; k < 3; k++) {
+        const x = -W / 3 + (W / 3) * k;
+        mesh(geoCylinder, mat('#1b1d1e'), vessel, [x, 7.4, 0], [0.012, 3.6, 0.012]);
+        mesh(new T.ConeGeometry(0.55, 0.5, 20, 1, true), mat('#1f2224', {side: T.DoubleSide, metalness: 0.4, roughness: 0.4}), vessel, [x, 5.55, 0]);
+        mesh(geoSphere, barGlow, vessel, [x, 5.35, 0], [0.18, 0.12, 0.18]);
+      }
+    // A sculpted rock backdrop against the back glass makes the larger tanks feel deep.
+    if (look.backdrop) {
+      const g = new T.PlaneGeometry(W - 0.3, 4.4, Math.round(W * 4), 18),
+        p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i),
+          y = p.getY(i);
+        p.setZ(i, Math.max(0, fbm(x * 0.6, y * 0.6, 3, 4) + 0.35) * 0.9 + Math.abs(fbm(x * 2.2, y * 2.2, 7, 2)) * 0.25);
+      }
+      g.computeVertexNormals();
+      paint(g, (x, y, z, out) => out.set(look.reef ? '#7c7468' : '#5f6c66').lerp(C(look.reef ? '#a99780' : '#7f8f86'), Math.min(1, z * 0.9)).multiplyScalar(0.75 + 0.25 * Math.min(1, (y + 2.2) / 4.4)));
+      const back = mesh(g, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.92}), vessel, [0, 2.55, -D / 2 + 0.12]);
+      back.receiveShadow = true;
+    }
+    // The reef: coral heads clustered at both ends of the largest tank.
+    if (look.reef)
+      for (let k = 0; k < 10; k++) {
+        const side = k % 2 ? 1 : -1,
+          x = side * (W / 2 - 1.2 - (k % 3) * 0.8),
+          z = -D / 2 + 1 + ((k * 0.37) % 1) * (D - 2.4),
+          c = mesh(coralGeometry(k % 2 ? 4 : 3), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.7}), vessel, [x, 0.38, z]);
+        c.scale.setScalar(0.45 + (k % 4) * 0.12);
+        c.rotation.y = k * 1.7;
+        c.castShadow = true;
+      }
   }
-  for (const x of [-4.71, 4.71]) for (const z of [-2.67, 2.67]) trim.push(place(new T.BoxGeometry(0.09, 4.9, 0.09), [x, 2.59, z]));
-  mesh(merge(trim), mat('#3a403c', {metalness: 0.65, roughness: 0.3}), tank);
   const tankWater = mesh(
     new T.PlaneGeometry(9.15, 5.15, 46, 28),
     new T.MeshPhysicalMaterial({
@@ -477,7 +546,14 @@ export function createWorld(canvas, state, onError) {
   const sand = mesh(sandGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}), tank, [0, 0.3, 0]);
   sand.receiveShadow = true;
   sand.rotation.x = -Math.PI / 2;
-  const substrate = (x, z) => 0.3 + Math.max(0, (2.5 - z) / 5) * 0.32 + fbm(x * 0.9, -z * 0.9, 0, 8) * 0.12;
+  // Bigger tanks stretch the same aquascape: the floor height at (x, z) is the base floor
+  // at the point the tank was scaled from, so stones and plants keep their footing.
+  const tankK = {x: 1, z: 1};
+  const substrate = (x, z) => {
+    x /= tankK.x;
+    z /= tankK.z;
+    return 0.3 + Math.max(0, (2.5 - z) / 5) * 0.32 + fbm(x * 0.9, -z * 0.9, 0, 8) * 0.12;
+  };
   const gravelGeo = new T.IcosahedronGeometry(0.05, 0),
     gravel = new T.InstancedMesh(gravelGeo, new T.MeshStandardMaterial({roughness: 0.8}), 260),
     gm = new T.Object3D();
@@ -599,17 +675,20 @@ export function createWorld(canvas, state, onError) {
   caustic.rotation.x = -Math.PI / 2;
   // Hardscape: a few weathered stones grouped off-centre, plus a driftwood branch.
   const stoneMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9});
+  // Aquascape pieces that move outward with the tank size (see applyTankTier).
+  const spreads = [];
   const stonePlan = [[-2.6, -1.3, 0.7], [-1.9, -1.6, 0.45], [-3.2, -0.6, 0.38], [2.9, 1.1, 0.32], [0.4, 1.4, 0.25], [3.6, -1.7, 0.5], [-0.6, -1.8, 0.3]];
   stonePlan.forEach(([x, z, sc], i) => {
     const r = mesh(rockGeometry(50 + i, i % 2 === 0, ['#6f7d76', '#8a958c']), stoneMat, tank, [x, substrate(x, z) + sc * 0.25, z], [sc * 1.3, sc * 1.1, sc]);
     r.rotation.y = i * 1.3;
+    spreads.push({o: r, x, z, point: true});
   });
   const drift = [];
   const branch = (pts, r0) => drift.push(paint(tube(pts.map(p => new T.Vector3(...p)), u => r0 * (1 - u * 0.7), 7), (x, y, z, out) => out.set('#5b4636').multiplyScalar(0.8 + fbm(x * 4, y * 4, z * 4, 6) * 0.4)));
   branch([[1.2, 0.5, -1.4], [1.9, 0.9, -1.2], [2.6, 1.6, -1.5], [3.0, 2.4, -1.3]], 0.14);
   branch([[1.9, 0.9, -1.2], [1.6, 1.6, -0.9], [1.3, 2.1, -1.1]], 0.07);
   branch([[2.6, 1.6, -1.5], [3.4, 1.9, -1.9]], 0.06);
-  mesh(merge(drift), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.85}), tank);
+  spreads.push({o: mesh(merge(drift), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.85}), tank), x: 2.3, z: -1.4});
   const plants = new T.Group(),
     arch = new T.Group(),
     lanterns = new T.Group();
@@ -660,10 +739,27 @@ export function createWorld(canvas, state, onError) {
   function mossBall(x, z, r) {
     return paint(displace(place(new T.SphereGeometry(r, 14, 10), [0, 0, 0]), r * 0.18, 9 / r, 4, 2), (xx, y, zz, out) => out.set('#3e6e43').multiplyScalar(0.8 + fbm(xx * 20, y * 20, zz * 20, 2) * 0.4)).translate(x, substrate(x, z) + r * 0.8, z);
   }
-  const baseGreens = [ribbons(-3.7, -1.9, 9, 3.4, 1), ribbons(3.9, -1.9, 8, 3.0, 2), sword(-3.4, 1.2, 1.1, 0.4), sword(3.4, -0.6, 1.3, 1.1), mossBall(-1.4, -1.0, 0.22), mossBall(-2.2, -0.6, 0.16)];
-  for (const g of baseGreens) leaves.push(mesh(g, plantMat, tank));
+  const baseGreens = [
+    [ribbons(-3.7, -1.9, 9, 3.4, 1), -3.7, -1.9],
+    [ribbons(3.9, -1.9, 8, 3.0, 2), 3.9, -1.9],
+    [sword(-3.4, 1.2, 1.1, 0.4), -3.4, 1.2],
+    [sword(3.4, -0.6, 1.3, 1.1), 3.4, -0.6],
+    [mossBall(-1.4, -1.0, 0.22), -1.4, -1],
+    [mossBall(-2.2, -0.6, 0.16), -2.2, -0.6],
+  ];
+  for (const [g, x, z] of baseGreens) {
+    const m = mesh(g, plantMat, tank);
+    leaves.push(m);
+    spreads.push({o: m, x, z});
+  }
   // River garden decor: a lush back row of ribbon grass and swords.
-  for (let i = 0; i < 6; i++) leaves.push(mesh(i % 2 ? sword(-2.7 + i * 1.1, 1.7, 0.9, i) : ribbons(-2.7 + i * 1.1, -2.0, 7, 2.4, i + 3), plantMat, plants));
+  for (let i = 0; i < 6; i++) {
+    const x = -2.7 + i * 1.1,
+      z = i % 2 ? 1.7 : -2,
+      m = mesh(i % 2 ? sword(x, z, 0.9, i) : ribbons(x, z, 7, 2.4, i + 3), plantMat, plants);
+    leaves.push(m);
+    spreads.push({o: m, x, z});
+  }
   // Moonstone arch: a weathered stone bridge with moss along its crown.
   const archGeo = new T.TorusGeometry(1.1, 0.28, 12, 36, Math.PI);
   displace(archGeo, 0.09, 3, 9, 3);
@@ -673,6 +769,7 @@ export function createWorld(canvas, state, onError) {
   for (let i = 0; i < ac.count; i++) if (archNormals.getY(i) > 0.6) ac.setXYZ(i, 0.33, 0.48, 0.3);
   mesh(archGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9}), arch, [1.2, substrate(1.2, -0.8) - 0.05, -0.8]);
   for (const x of [0.1, 2.3]) mesh(rockGeometry(70 + x, true, ['#7f8b82', '#97a198']), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9}), arch, [x, substrate(x, -0.8) + 0.12, -0.8], [0.42, 0.35, 0.38]);
+  spreads.push({o: arch, x: 1.2, z: -0.8});
   // Sunken lanterns: little glass lanterns glowing on the sand.
   const lanternGlass = mat('#ffd9a0', {emissive: '#eab979', emissiveIntensity: 0.9, transparent: true, opacity: 0.75});
   for (let i = 0; i < 3; i++) {
@@ -682,6 +779,7 @@ export function createWorld(canvas, state, onError) {
     l.position.set(x, substrate(x, 0.5) - 0.02, 0.5);
     l.rotation.set((i - 1) * 0.15, i * 0.8, (i - 1) * 0.12);
     lanterns.add(l);
+    spreads.push({o: l, x, z: 0.5, point: true});
   }
   // Decor, plants and stones cast and catch the light from above; glass and water do not.
   tank.traverse(o => {
@@ -698,6 +796,54 @@ export function createWorld(canvas, state, onError) {
     new T.PointsMaterial({color: '#c6eade', size: 0.035, transparent: true, depthWrite: false, opacity: 0.55}),
   );
   tank.add(bubbles);
+  const bubbleBase = Float32Array.from(bubbleCoords),
+    gravelBase = [];
+  for (let i = 0; i < gravel.count; i++) {
+    const m4 = new T.Matrix4();
+    gravel.getMatrixAt(i, m4);
+    gravelBase.push(m4);
+  }
+  let tankTier = -1;
+  // The orbit pulls back to frame bigger tanks.
+  const tankRadius = () => (innerWidth < 700 ? Math.max(20, 14.3 / camera.aspect) : 15.5) * (1 + 0.62 * (tankK.x - 1));
+  // Rebuild the vessel for the owned tier and spread the aquascape, water, light and fish
+  // space to fill it.
+  function applyTankTier(tier) {
+    tier = Math.max(0, Math.min(TANK_TIERS.length - 1, tier | 0));
+    if (tier === tankTier) return;
+    tankTier = tier;
+    const look = TANK_TIERS[tier];
+    tankK.x = look.w / TANK_TIERS[0].w;
+    tankK.z = look.d / TANK_TIERS[0].d;
+    buildVessel(tier);
+    tankWater.scale.set(tankK.x, tankK.z, 1);
+    sand.scale.set(tankK.x, tankK.z, 1);
+    caustic.scale.set(tankK.x, tankK.z, 1);
+    for (const sp of spreads) {
+      if (sp.point) sp.o.position.set(sp.x * tankK.x, sp.o.position.y, sp.z * tankK.z);
+      else sp.o.position.set(sp.x * (tankK.x - 1), sp.o.position.y, sp.z * (tankK.z - 1));
+    }
+    const m4 = new T.Matrix4(),
+      pos = new T.Vector3(),
+      quat = new T.Quaternion(),
+      scl = new T.Vector3();
+    gravelBase.forEach((base, i) => {
+      base.decompose(pos, quat, scl);
+      pos.x *= tankK.x;
+      pos.z *= tankK.z;
+      gravel.setMatrixAt(i, m4.compose(pos, quat, scl));
+    });
+    gravel.instanceMatrix.needsUpdate = true;
+    const ba = bubblesGeo.attributes.position;
+    for (let i = 0; i < ba.count; i++) ba.setXYZ(i, bubbleBase[i * 3] * tankK.x, ba.getY(i), bubbleBase[i * 3 + 2] * tankK.z);
+    ba.needsUpdate = true;
+    shafts.forEach((sh, i) => sh.position.set((-3.2 + i * 1.3) * tankK.x, sh.position.y, (-0.6 + (i % 2) * 1.1) * tankK.z));
+    tankGlow.distance = 14 * tankK.x;
+    tankGlow.intensity = 20 * (0.8 + 0.2 * tankK.x) * (tier >= 2 ? 1.25 : 1);
+    for (const s of swimmers) s.motion.space = tankK;
+    gravel.computeBoundingSphere();
+    if (hasOrbited) targetRadius = tankRadius();
+  }
   const firePos = [];
   for (let i = 0; i < 50; i++)
     firePos.push((Math.random() - 0.5) * 40, Math.random() * 7 + 0.5, (Math.random() - 0.5) * 30);
@@ -814,7 +960,9 @@ export function createWorld(canvas, state, onError) {
   );
   selectedRing.rotation.x = Math.PI / 2;
   selectedRing.visible = false;
+  applyTankTier(state.tank || 0);
   function refreshFish(species) {
+    applyTankTier(state.tank || 0);
     const keep = new Set(state.fish.map(f => f.uid));
     for (const s of swimmers)
       if (!keep.has(s.uid)) {
@@ -837,6 +985,7 @@ export function createWorld(canvas, state, onError) {
       fishGroup.add(model);
       model.userData.uid = resident.uid;
       const motion = makeSwimmer(i, state.fish.length);
+      motion.space = tankK;
       model.position.set(motion.p.x, motion.p.y, motion.p.z);
       return {
         uid: resident.uid,
@@ -887,7 +1036,7 @@ export function createWorld(canvas, state, onError) {
     drag = null;
     pinchDist = 0;
     if (v === 'tank' && !hasOrbited) {
-      radius = targetRadius = innerWidth < 700 ? Math.max(20, 14.3 / camera.aspect) : 15.5;
+      radius = targetRadius = tankRadius();
       hasOrbited = true;
     }
     applyPalette();
@@ -967,7 +1116,7 @@ export function createWorld(canvas, state, onError) {
   window.addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
-    if (view === 'tank') targetRadius = innerWidth < 700 ? Math.max(20, 14.3 / camera.aspect) : 15.5;
+    if (view === 'tank') targetRadius = tankRadius();
     renderer.setSize(innerWidth, innerHeight);
   });
   canvas.addEventListener('webglcontextlost', e => {
@@ -987,7 +1136,7 @@ export function createWorld(canvas, state, onError) {
   function splashTank(x, z) {
     splashAt = clock;
     splashOrigin = {x, z};
-    tankSurface.impulse(x, z, 1.8, 0.42);
+    tankSurface.impulse(x / tankK.x, z / tankK.z, 1.8, 0.42);
     splashCallback();
     const a = splashGeo.attributes.position;
     for (let i = 0; i < a.count; i++) {
@@ -1148,6 +1297,12 @@ export function createWorld(canvas, state, onError) {
       tackle.setCurrent?.(region === 1 ? 0.35 : 0);
       const equipped = (BAITS[state.bait] || BAITS[0]).id;
       if (tackle.baitId !== equipped) tackle.setBait(equipped);
+      // Upgrades show in the world: the rod, reel and line change with what you own.
+      angler.setGear(state.rod, state.line);
+      if (tackle.lineTier !== state.line) {
+        tackle.lineTier = state.line;
+        tackle.setLine(state.line);
+      }
       if (castState === 'reeling') tackle.fight(fightTension);
       tackle.update(dt, clock, angler.tip, camera);
       // Keep the float away from the face while the player designs their angler.
@@ -1235,6 +1390,23 @@ export function createWorld(canvas, state, onError) {
         daylightAngle = (cycle / 0.64) * Math.PI,
         day = cycle < 0.64,
         moonAngle = cycle * TAU;
+      // Weather eases in over several seconds: cover greys and darkens the sky, storms flash.
+      const wk = 1 - Math.exp(-dt * 0.22),
+        w = titleMode ? 'clear' : conditions.weather;
+      weather.cover += ((titleMode ? 0.2 : conditions.cover ?? 0.3) - weather.cover) * wk;
+      weather.storm += ((w === 'storm' ? 1 : 0) - weather.storm) * wk;
+      weather.wind += ((conditions.windKmh ?? 8) - weather.wind) * wk;
+      if (weather.storm > 0.6 && clock > nextFlash) {
+        nextFlash = clock + 6 + Math.random() * 14;
+        flash = 1;
+        setTimeout(() => soundCallback('thunder'), 700 + Math.random() * 2200);
+      }
+      flash *= Math.exp(-dt * (flash > 0.5 ? 9 : 4));
+      const grey = skyB.copy(sky[0]).lerp(sky[1], 0.5),
+        lum = grey.r * 0.3 + grey.g * 0.59 + grey.b * 0.11,
+        dim = 1 - weather.cover * 0.32 - weather.storm * 0.22;
+      sky[0].lerp(grey.setScalar(lum), weather.cover * 0.65).multiplyScalar(dim).addScalar(flash * 0.35);
+      sky[1].lerp(skyB.setScalar(lum * 1.05), weather.cover * 0.55).multiplyScalar(dim + 0.08).addScalar(flash * 0.25);
       gradient.uniforms.top.value.lerp(sky[0], blend);
       gradient.uniforms.bottom.value.lerp(sky[1], blend);
       moon.position.set(Math.cos(moonAngle) * 75, 30 + Math.sin(moonAngle) * 20, -100);
@@ -1248,15 +1420,16 @@ export function createWorld(canvas, state, onError) {
       aimShadow(0, 1, 7.5, 9, 40);
       sun.position.copy(sunTarget.position).addScaledVector(lightDir, 40);
       sun.color.copy(sky[2]);
-      sun.intensity += ((night ? 0.55 : 0.7 + sunUp * 1.9) - sun.intensity) * blend;
+      sun.intensity += ((night ? 0.55 : 0.7 + sunUp * 1.9) * (1 - weather.cover * 0.62) - sun.intensity) * blend;
       hemi.color.copy(sky[0]).lerp(skyA.set('#ffffff'), 0.45);
       hemi.groundColor.set(region >= 3 ? '#2a4a50' : '#22392f');
-      hemi.intensity += ((night ? 0.85 : dusk ? 1.5 : 1.9) - hemi.intensity) * blend;
+      hemi.intensity += ((night ? 0.85 : dusk ? 1.5 : 1.9) * (1 - weather.storm * 0.25) - hemi.intensity) * blend;
+      hemi.intensity += flash * 2.2;
       fill.intensity = night ? 0.45 : 0.9;
       scene.fog.color.copy(gradient.uniforms.bottom.value).multiplyScalar(0.78);
       // Haze thickens with the weather: clear air shows the far ranges, mist swallows them.
       if (view === 'lake') {
-        const haze = {clear: 0.0042, wind: 0.0038, mist: 0.0098, rain: 0.0068}[conditions.weather] ?? 0.0042;
+        const haze = {clear: 0.0042, cloudy: 0.0045, overcast: 0.0056, wind: 0.0038, mist: 0.0098, rain: 0.0068, storm: 0.0082}[conditions.weather] ?? 0.0045;
         scene.fog.density += ((titleMode ? 0.0045 : haze) - scene.fog.density) * blend;
       }
       const wu = waterSystem.uniforms;
@@ -1264,7 +1437,7 @@ export function createWorld(canvas, state, onError) {
       wu.skyTop.value.copy(gradient.uniforms.top.value);
       wu.skyHorizon.value.copy(gradient.uniforms.bottom.value);
       wu.sunDir.value.copy(lightDir);
-      wu.sunColor.value.copy(sky[2]).multiplyScalar(day ? 1 : 0.45);
+      wu.sunColor.value.copy(sky[2]).multiplyScalar((day ? 1 : 0.45) * (1 - weather.cover * 0.75));
       wu.fogColor.value.copy(scene.fog.color);
       wu.fogDensity.value = scene.fog.density;
       wu.light.value += ((night ? 0.42 : dusk ? 0.78 : 1) - wu.light.value) * blend;
@@ -1278,15 +1451,18 @@ export function createWorld(canvas, state, onError) {
       const cloudTint = skyA.copy(sky[1]).lerp(skyB.set('#ffffff'), night ? 0.05 : dusk ? 0.35 : 0.75);
       if (dusk) cloudTint.lerp(sky[2], 0.25);
       if (night) cloudTint.multiplyScalar(0.55);
-      const overcast = conditions.weather === 'rain' ? 1 : conditions.weather === 'mist' ? 0.5 : 0;
+      const overcast = weather.cover;
       for (const c of clouds) {
         const u = c.userData,
-          a = u.angle + clock * 0.0016;
-        c.visible = true;
-        c.position.set(Math.sin(a) * u.dist, u.height, 8 - Math.cos(a) * u.dist);
+          a = u.angle + clock * (0.0016 + weather.wind * 0.00004);
+        // Clouds fade in and out one by one as cover changes, never popping.
+        const show = Math.min(1, Math.max(0, (0.15 + overcast * 1.05) * 18 - u.order));
+        c.visible = show > 0.01;
+        c.position.set(Math.sin(a) * u.dist, u.height - overcast * 6, 8 - Math.cos(a) * u.dist);
         c.lookAt(camera.position.x, u.height * 0.6, camera.position.z);
-        c.material.color.copy(cloudTint).multiplyScalar(1 - overcast * 0.28);
-        c.material.opacity = (night ? 0.4 : 0.95) * (0.8 + overcast * 0.2);
+        c.material.color.copy(cloudTint).multiplyScalar(1 - overcast * 0.42 - weather.storm * 0.18);
+        c.material.color.addScalar(flash * 0.6);
+        c.material.opacity = (night ? 0.4 : 0.95) * (0.75 + overcast * 0.25) * show;
       }
     } else {
       radius += (targetRadius - radius) * 0.07;
@@ -1335,6 +1511,7 @@ export function createWorld(canvas, state, onError) {
           }
           continue;
         }
+        if (tankTier !== (state.tank || 0)) applyTankTier(state.tank || 0);
         stepSwimmer(s.motion, dt, clock, feeding, feedTarget, neighbors, s.bottom);
         const m = s.motion;
         s.mesh.position.set(m.p.x, m.p.y, m.p.z);
@@ -1342,7 +1519,7 @@ export function createWorld(canvas, state, onError) {
         s.mesh.rotation.z = m.pitch;
         // Fish cruising just under the surface dimple it as they pass.
         if (m.p.y > 3.95 && Math.random() < dt * 1.2)
-          tankSurface.impulse(m.p.x, m.p.z, 0.05 + Math.hypot(m.v.x, m.v.z) * 0.08, 0.22);
+          tankSurface.impulse(m.p.x / tankK.x, m.p.z / tankK.z, 0.05 + Math.hypot(m.v.x, m.v.z) * 0.08, 0.22);
         animateFish(s.mesh, m.tail, 0.7 + Math.hypot(m.v.x, m.v.z) * 0.7);
         // Level of detail: distant fish drop their smallest fins (never on Ultra).
         const near = state.quality === 'ultra' || camera.position.distanceTo(s.mesh.position) < 26;
@@ -1544,7 +1721,7 @@ export function createWorld(canvas, state, onError) {
       catchTwist = 0;
     },
     arrive: uid => {
-      arrival = {uid, x: (Math.random() - 0.5) * 2, y: 7.7, z: 0, v: 0, entered: false};
+      arrival = {uid, x: (Math.random() - 0.5) * 2 * tankK.x, y: 7.7, z: 0, v: 0, entered: false};
     },
     setMood: () => applyPalette(),
     setFocus: on => {
@@ -1563,10 +1740,10 @@ export function createWorld(canvas, state, onError) {
       if (!swimmers.length) return false;
       feedStart = clock;
       feedUntil = clock + 12;
-      feedTarget.set((Math.random() - 0.5) * 2.5, 4.15, Math.random() - 0.5);
+      feedTarget.set((Math.random() - 0.5) * 2.5 * tankK.x, 4.15, (Math.random() - 0.5) * tankK.z);
       // Pellets patter onto the surface where they land, not at the tank centre.
       for (let k = 0; k < 5; k++)
-        tankSurface.impulse(feedTarget.x + (Math.random() - 0.5) * 1.6, feedTarget.z + (Math.random() - 0.5) * 1.3, 0.12, 0.2);
+        tankSurface.impulse((feedTarget.x + (Math.random() - 0.5) * 1.6) / tankK.x, (feedTarget.z + (Math.random() - 0.5) * 1.3) / tankK.z, 0.12, 0.2);
       return true;
     },
     renderer,

@@ -4,22 +4,22 @@ import {hookGeometry, baitModel, lantern, broadleaf, pine, rock, palm, coral, re
 import {boatModel} from './environment.js?v=8';
 import {surfaceTexture} from './textures.js?v=8';
 import {BAITS} from './economy.js?v=8';
+import {ROD_LOOKS, LINE_LOOKS} from './looks.js?v=8';
 // 3D models for market items, rendered into the shop's thumbnails. Each builder returns
 // the object and how to look at it: a turn (yaw), a tilt (pitch) and an optional focus box.
 const V = (x, y, z) => new T.Vector3(x, y, z);
 const std = (color, extra = {}) => new T.MeshStandardMaterial({color, roughness: 0.6, ...extra});
 
-const ROD_BLANKS = ['#7c6a4a', '#6f8458', '#c9ccc3', '#3e4c72', '#1c3348'],
-  ROD_WRAPS = ['#8c3f32', '#c49a4a', '#38606e', '#c9b16a', '#d8dfe2'],
-  LINE_COLORS = ['#ece6c8', '#7f9c6b', '#d4ecef', '#3c80aa', '#2d4e66'];
+const LINE_COLORS = LINE_LOOKS.map(l => l.color);
 
 function rod(i) {
   const g = new T.Group(),
-    blank = std(ROD_BLANKS[i], {metalness: i >= 2 ? 0.4 : 0.15, roughness: i >= 3 ? 0.25 : 0.45}),
-    wrap = std(ROD_WRAPS[i], {roughness: 0.4}),
-    chrome = std('#d9ddd6', {metalness: 0.9, roughness: 0.15}),
-    cork = std('#b4956f', {map: surfaceTexture('cork'), roughness: 0.95}),
-    reel = std(i >= 3 ? '#26313a' : '#3a4542', {metalness: 0.55, roughness: 0.3});
+    look = ROD_LOOKS[i],
+    blank = std(look.blank, {metalness: look.metal, roughness: look.rough}),
+    wrap = std(look.wrap, {roughness: 0.4}),
+    chrome = std(look.reelTrim, {metalness: 0.9, roughness: 0.15}),
+    cork = look.grip === 'eva' ? std('#1f2224', {roughness: 0.82}) : std('#b4956f', {map: surfaceTexture('cork'), roughness: 0.95}),
+    reel = std(look.reel, {metalness: 0.55, roughness: 0.3});
   // The butt section only, so the grip, reel and guides read at thumbnail size.
   g.add(new T.Mesh(new T.CylinderGeometry(0.011, 0.02, 1.3, 10), blank));
   g.children.at(-1).position.y = 0.65;

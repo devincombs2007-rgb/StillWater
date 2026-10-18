@@ -907,6 +907,8 @@ export function freshState(now = Date.now()) {
     cameraMode: 'third',
     seenHelp: false,
     haptics: true,
+    // Imperial for US English devices, metric everywhere else; changeable in Options.
+    units: typeof navigator !== 'undefined' && /^en-US/i.test(navigator.language || '') ? 'imperial' : 'metric',
     audioOn: true,
     volume: 0.3,
   };
@@ -951,6 +953,7 @@ export function sanitize(raw, now = Date.now()) {
   s.version = 3;
   s.audioOn = s.audioOn !== false;
   s.haptics = s.haptics !== false;
+  s.units = s.units === 'imperial' ? 'imperial' : 'metric';
   s.volume = Number.isFinite(s.volume) ? Math.max(0, Math.min(0.6, s.volume)) : 0.3;
   for (const k of ['pearls', 'bank', 'total', 'attempts', 'lifetimeEarned']) s[k] = n(s[k], k === 'pearls' ? 60 : 0);
   for (const [k, max] of [
@@ -1205,6 +1208,7 @@ export function rebirth(s) {
   const keep = {
     audioOn: s.audioOn,
     haptics: s.haptics,
+    units: s.units,
     volume: s.volume,
     ownedBaits: s.ownedBaits,
     bait: s.bait,

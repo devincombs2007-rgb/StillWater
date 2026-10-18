@@ -16,8 +16,11 @@ export function makeSwimmer(i, count = 6) {
     tail: 0,
   };
 }
+// s.space optionally widens the swimming area for larger tanks ({x, z} multipliers).
 export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom = false) {
   dt = clamp(dt, 0, 0.05);
+  const kx = s.space?.x || 1,
+    kz = s.space?.z || 1;
   s.decision -= dt;
   if (s.decision <= 0) {
     s.decision = 2.2 + (Math.sin(s.phase + time) * 0.5 + 0.5) * 3.2;
@@ -25,9 +28,9 @@ export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom =
     // The extra per-fish offset matters: golden-angle phases times 1.31 land almost exactly on
     // multiples of pi, which used to send every fish to the same x and clump the school.
     s.goal = {
-      x: Math.sin(a * 1.31 + s.phase * 0.61) * 3.35,
+      x: Math.sin(a * 1.31 + s.phase * 0.61) * 3.35 * kx,
       y: bottom ? 1.0 + 0.12 * Math.sin(a) : 1.1 + (0.5 + 0.5 * Math.sin(a * 0.7)) * 2.8,
-      z: Math.cos(a * 0.83) * 1.6,
+      z: Math.cos(a * 0.83) * 1.6 * kz,
     };
   }
   let target = s.goal;
@@ -68,9 +71,9 @@ export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom =
     }
   }
   for (const [axis, min, max] of [
-    ['x', -3.8, 3.8],
+    ['x', -3.8 * kx - (kx - 1) * 0.6, 3.8 * kx + (kx - 1) * 0.6],
     ['y', 0.85, 4.25],
-    ['z', -1.95, 1.95],
+    ['z', -1.95 * kz - (kz - 1) * 0.5, 1.95 * kz + (kz - 1) * 0.5],
   ]) {
     const p = s.p[axis];
     let force = p < min ? (min - p) * 2 : p > max ? (max - p) * 2 : 0;
@@ -97,9 +100,9 @@ export function stepSwimmer(s, dt, time, feeding, feed, neighbors = [], bottom =
   s.p.x += s.v.x * dt;
   s.p.y += s.v.y * dt;
   s.p.z += s.v.z * dt;
-  s.p.x = clamp(s.p.x, -4, 4);
+  s.p.x = clamp(s.p.x, -4 * kx - (kx - 1) * 0.6, 4 * kx + (kx - 1) * 0.6);
   s.p.y = clamp(s.p.y, 0.75, 4.35);
-  s.p.z = clamp(s.p.z, -2.15, 2.15);
+  s.p.z = clamp(s.p.z, -2.15 * kz - (kz - 1) * 0.5, 2.15 * kz + (kz - 1) * 0.5);
   const yaw = Math.atan2(-s.v.z, s.v.x),
     diff = Math.atan2(Math.sin(yaw - s.yaw), Math.cos(yaw - s.yaw));
   s.yaw += clamp(diff, -s.turn * dt, s.turn * dt);

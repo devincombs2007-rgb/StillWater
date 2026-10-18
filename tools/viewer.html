@@ -45,6 +45,7 @@ scene.add(root);
 const state = freshState();
 state.character = {name: 'Viewer', skin: Number(q.get('skin') || 1), hair: Number(q.get('hair') || 1), style: Number(q.get("style") || 0), eyes: Number(q.get("eyes") || 0), facial: Number(q.get("facial") || 0)};
 for (const k of ['shirt', 'hat', 'glasses', 'pants', 'shoes']) if (q.get(k)) state.outfit[k] = q.get(k);
+for (const k of ['rod', 'line']) if (q.get(k)) state[k] = Number(q.get(k));
 let angler = null;
 let x = 0;
 for (const name of names) {

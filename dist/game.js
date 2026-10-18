@@ -43,6 +43,7 @@ import {
   resolveFailure,
   reelProfile,
   isReelHit,
+  WEATHER_NAMES,
 } from './fishing.js?v=8';
 // The one place the release number lives; shown faintly in a corner like any shipped game.
 // BUILD must match index.html's stillwater-build marker (the offline test checks it).
@@ -154,12 +155,16 @@ function hud() {
   $('#location-name').textContent = currentView === 'lake' ? REGIONS[state.region].name : 'Your sanctuary';
   $('#location-detail').textContent =
     currentView === 'lake' ? REGIONS[state.region].habitat + ' water' : 'Living collection';
-  $('#conditions').textContent =
-    conditions.phase.toUpperCase() +
-    ' · ' +
-    conditions.weather.toUpperCase() +
-    ' · feeding odds ×' +
-    conditions.rarity.toFixed(2);
+  $('#conditions').textContent = [
+    conditions.phase,
+    WEATHER_NAMES[conditions.weather] || conditions.weather,
+    conditions.tempC === undefined ? '' : fmtTemp(conditions.tempC),
+    conditions.windKmh === undefined ? '' : 'wind ' + fmtWind(conditions.windKmh),
+    'feeding odds ×' + conditions.rarity.toFixed(2),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+    .toUpperCase();
   const q = QUESTS[state.quest];
   $('#quest-title').textContent = q?.name || 'Keeper of the water';
   $('#quest-count').textContent = q ? `${Math.min(state.total, q.target)} / ${q.target}` : 'All milestones complete';
@@ -190,6 +195,12 @@ function setView(v) {
     v === 'lake' ? 'Choose your tackle. Earn your catch.' : 'Growing fish. Growing possibilities.';
   hud();
 }
+// Units follow the player's choice in Options (metric or imperial).
+const imperial = () => state.units === 'imperial';
+const fmtWeight = kg => (imperial() ? (kg < 0.4536 ? (kg * 35.274).toFixed(1) + ' oz' : (kg * 2.20462).toFixed(2) + ' lb') : kg.toFixed(2) + ' kg');
+const fmtLength = cm => (imperial() ? (cm / 2.54).toFixed(1) + ' in' : cm.toFixed(1) + ' cm');
+const fmtTemp = c => (imperial() ? Math.round((c * 9) / 5 + 32) + '°F' : Math.round(c) + '°C');
+const fmtWind = k => (imperial() ? Math.round(k * 0.621) + ' mph' : Math.round(k) + ' km/h');
 // Gentle haptics where the device supports them (Android; iOS Safari ignores this).
 const buzz = pattern => {
   try {
@@ -698,7 +709,7 @@ function catchView() {
   const f = SPECIES.find(x => x.id === pending.id),
     value = releaseValue(pending),
     full = state.fish.length >= TANKS[state.tank].capacity;
-  return `<div class="catch-stats" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A CATCH, EARNED</span><h2 id="panel-title">${f.name}</h2><div class="rarity">${RARITIES[f.rarity]} · ${pending.isNew ? 'NEW DISCOVERY' : 'RETURNING SPECIES'}</div><p class="catch-instruction">Your angler holds the line. Drag the scene to rotate the dangling fish.</p><div class="profile-stats"><div><strong>${fishWeight(pending).toFixed(2)} kg</strong><span>Weight now</span></div><div><strong>${pending.length.toFixed(1)} cm</strong><span>Adult length</span></div><div><strong>${pending.potential.toFixed(2)}×</strong><span>Growth potential</span></div></div><p>${growth(pending) < 1 ? 'Juvenile · raise it for more income and a higher release value.' : 'Adult · ready for your sanctuary or the wild.'}${pending.newRecord ? ' A new length record.' : ''}</p><button class="primary-button" id="keep-catch" ${full ? 'disabled' : ''}>${full ? 'Aquarium full' : 'Welcome to the aquarium'} ↗</button><button class="secondary-button" id="release-catch">Release now · +${value} ◇</button></div>`;
+  return `<div class="catch-stats" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A CATCH, EARNED</span><h2 id="panel-title">${f.name}</h2><div class="rarity">${RARITIES[f.rarity]} · ${pending.isNew ? 'NEW DISCOVERY' : 'RETURNING SPECIES'}</div><p class="catch-instruction">Your angler holds the line. Drag the scene to rotate the dangling fish.</p><div class="profile-stats"><div><strong>${fmtWeight(fishWeight(pending))}</strong><span>Weight now</span></div><div><strong>${fmtLength(pending.length)}</strong><span>Adult length</span></div><div><strong>${pending.potential.toFixed(2)}×</strong><span>Growth potential</span></div></div><p>${growth(pending) < 1 ? 'Juvenile · raise it for more income and a higher release value.' : 'Adult · ready for your sanctuary or the wild.'}${pending.newRecord ? ' A new length record.' : ''}</p><button class="primary-button" id="keep-catch" ${full ? 'disabled' : ''}>${full ? 'Aquarium full' : 'Welcome to the aquarium'} ↗</button><button class="secondary-button" id="release-catch">Release now · +${value} ◇</button></div>`;
 }
 function collectionView() {
   const g = COLLECTION_GOALS[state.collectionClaimed];
@@ -735,7 +746,7 @@ function journal(residents = false) {
     .map(({f, r}) => {
       const known = !!r || state.found.includes(f.id),
         age = r ? growth(r) : 1;
-      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}"><div class="fish-thumb" data-thumb="${f.id}" data-unknown="${known ? 0 : 1}">${fishSvg(f, !known)}</div><h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}</div><div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? (state.records[f.id]?.best ? '<br>Best ' + state.records[f.id].best.toFixed(1) + ' cm' : '<br>Not yet landed') : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet & nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : ''}</article>`;
+      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}"><div class="fish-thumb" data-thumb="${f.id}" data-unknown="${known ? 0 : 1}">${fishSvg(f, !known)}</div><h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}</div><div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? (state.records[f.id]?.best ? '<br>Best ' + fmtLength(state.records[f.id].best) : '<br>Not yet landed') : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet & nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : ''}</article>`;
     })
     .join('')}</div>`;
 }
@@ -749,7 +760,7 @@ function inspectView() {
     f = SPECIES.find(f => f.id === r.id),
     age = growth(r),
     cost = Math.ceil(f.value * (r.care + 1) * 2.3);
-  return `<div class="fish-profile" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A LIFE YOU CAN INVEST IN</span><h2 id="panel-title">${esc(r.nickname || f.name)}</h2><div class="rarity">${RARITIES[f.rarity]} · ${f.name}</div>${modelMarkup(f)}<div class="profile-stats"><div><strong>${fishWeight(r).toFixed(2)} kg</strong><span>Weight now</span></div><div><strong>${Math.round(age * 100)}%</strong><span>Mature</span></div><div><strong>${r.potential.toFixed(2)}×</strong><span>Potential</span></div></div><div class="collection-meter"><span style="width:${age * 100}%"></span></div><p>Care ${r.care}/3 · release value ${releaseValue(r)} pearls. Natural growth takes up to 45 minutes, modified by potential. Nurture sessions add two minutes of growth.</p><button class="secondary-button" id="upgrade-fish" ${r.care >= 3 || state.pearls < cost ? 'disabled' : ''}>${r.care >= 3 ? 'Care complete' : 'Care upgrade · ' + cost + ' ◇'}</button><label class="name-label" for="fish-nickname">A NAME, JUST FOR THEM</label><div class="name-row"><input id="fish-nickname" maxlength="24" value="${esc(r.nickname || '')}" placeholder="${f.name}"><button class="secondary-button" id="save-nickname">Save name</button></div><button class="text-button" id="back-residents">Meet the rest of your fish ↗</button></div>`;
+  return `<div class="fish-profile" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A LIFE YOU CAN INVEST IN</span><h2 id="panel-title">${esc(r.nickname || f.name)}</h2><div class="rarity">${RARITIES[f.rarity]} · ${f.name}</div>${modelMarkup(f)}<div class="profile-stats"><div><strong>${fmtWeight(fishWeight(r))}</strong><span>Weight now</span></div><div><strong>${Math.round(age * 100)}%</strong><span>Mature</span></div><div><strong>${r.potential.toFixed(2)}×</strong><span>Potential</span></div></div><div class="collection-meter"><span style="width:${age * 100}%"></span></div><p>Care ${r.care}/3 · release value ${releaseValue(r)} pearls. Natural growth takes up to 45 minutes, modified by potential. Nurture sessions add two minutes of growth.</p><button class="secondary-button" id="upgrade-fish" ${r.care >= 3 || state.pearls < cost ? 'disabled' : ''}>${r.care >= 3 ? 'Care complete' : 'Care upgrade · ' + cost + ' ◇'}</button><label class="name-label" for="fish-nickname">A NAME, JUST FOR THEM</label><div class="name-row"><input id="fish-nickname" maxlength="24" value="${esc(r.nickname || '')}" placeholder="${f.name}"><button class="secondary-button" id="save-nickname">Save name</button></div><button class="text-button" id="back-residents">Meet the rest of your fish ↗</button></div>`;
 }
 function characterView() {
   const swatch = (attr, colors, label) =>
@@ -776,7 +787,7 @@ function helpView() {
       ([v, n]) =>
         `<button class="secondary-button" data-volume="${v}" ${state.volume === v ? 'disabled' : ''}>${n} sound</button>`,
     )
-    .join('')}</div><button class="secondary-button" id="options-haptics">${state.haptics === false ? 'Vibration off · tap to enable' : 'Vibration on · tap to turn off'}</button></div><div class="quality-options">${[
+    .join('')}</div><button class="secondary-button" id="options-units">${imperial() ? 'Imperial · lb, in, °F · tap for metric' : 'Metric · kg, cm, °C · tap for imperial'}</button><button class="secondary-button" id="options-haptics">${state.haptics === false ? 'Vibration off · tap to enable' : 'Vibration on · tap to turn off'}</button></div><div class="quality-options">${[
     ['battery', 'Battery · 30 fps'],
     ['balanced', 'Balanced · 45 fps'],
     ['crisp', 'Crisp · 60 fps'],
@@ -1101,6 +1112,12 @@ function bindPanel() {
       state.audioOn = await sound.toggle();
       updateSoundButton(state.audioOn);
       save();
+      openPanel('help');
+    };
+    $('#options-units').onclick = () => {
+      state.units = imperial() ? 'metric' : 'imperial';
+      save();
+      hud();
       openPanel('help');
     };
     $('#options-haptics').onclick = () => {

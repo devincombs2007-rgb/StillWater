@@ -19,6 +19,8 @@ const ASSETS = [
   './preview.js?v=8',
   './items.js?v=8',
   './land.js?v=8',
+  './looks.js?v=8',
+  './ambience.js?v=8',
   './assets/three.module.js',
   './assets/three.core.js',
   './assets/icon-180.png',

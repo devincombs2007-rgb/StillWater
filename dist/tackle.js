@@ -1,5 +1,6 @@
 import * as T from './assets/three.module.js';
 import {hookGeometry, baitModel} from './scenery.js?v=8';
+import {lineLook} from './looks.js?v=8';
 // Physical tackle: a constrained Verlet line drawn as a camera-facing ribbon, a
 // spring-buoyant bobber that sits *in* the water, bite plunges, and a hooked fish
 // that drags the float against the line while the angler reels.
@@ -110,6 +111,12 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
   float.add(bait);
   const baits = {};
   let baitId = 'bare';
+  // The line takes the colour of the equipped line tier.
+  function setLine(tier) {
+    const look = lineLook(tier);
+    line.material.color.set(look.color);
+    line.material.opacity = look.opacity;
+  }
   function setBait(id) {
     baitId = id;
     if (!baits[id] && id !== 'bare') {
@@ -398,6 +405,7 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     hook,
     bait,
     setBait,
+    setLine,
     float,
   };
 }
