@@ -27,8 +27,9 @@ const canvas = document.querySelector('canvas');
 const renderer = new T.WebGLRenderer({canvas, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance'});
 renderer.setPixelRatio(1);
 renderer.setSize(W, H, false);
-canvas.style.width = W * 2 + 'px';
-canvas.style.height = H * 2 + 'px';
+canvas.style.width = '100%';
+canvas.style.maxWidth = W * 2 + 'px';
+canvas.style.height = 'auto';
 renderer.outputColorSpace = T.SRGBColorSpace;
 renderer.toneMapping = T.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.15;
@@ -152,9 +153,34 @@ const glint = new T.Mesh(new T.SphereGeometry(0.03, 8, 6), new T.MeshBasicMateri
 glint.position.set(0.6, 1.1, -3);
 scene.add(glint);
 
+// Animated transparent water with drifting sun sparkles, written in display space like the
+// game's water shader: colour changes every frame while the geometry stays put, the case
+// that smears in temporal upscalers unless it is marked reactive. ?reactive=0 leaves it unmarked.
+const waterTime = {value: 0};
+const water = new T.Mesh(
+  new T.PlaneGeometry(6, 4),
+  new T.ShaderMaterial({
+    transparent: true,
+    depthWrite: false,
+    uniforms: {time: waterTime},
+    vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform float time; varying vec2 vP;
+      void main(){
+        float w = sin(vP.x * 9.0 + time * 3.1) * sin(vP.y * 13.0 - time * 2.3) + 0.5 * sin((vP.x + vP.y) * 21.0 + time * 4.7);
+        float spark = pow(clamp(w * 0.6, 0.0, 1.0), 6.0);
+        gl_FragColor = vec4(mix(vec3(0.12, 0.36, 0.42), vec3(1.0, 0.97, 0.88), spark), 0.88);
+      }`,
+  }),
+);
+water.rotation.x = -Math.PI / 2;
+water.position.set(-2.2, 0.03, 1.2);
+water.material.userData.upscaleReactive = q.reactive === '0' ? 0 : 1;
+scene.add(water);
+
 // Deterministic animation by frame number at 30 fps.
 function pose(f) {
   const t = f / 30;
+  waterTime.value = t;
   hub.rotation.z = t * 2.4;
   fish.position.set(Math.sin(t * 2.1) * 3.2, 0.9 + Math.sin(t * 3.3) * 0.15, -4.2);
   fish.rotation.y = Math.cos(t * 2.1) > 0 ? 0 : Math.PI;
@@ -240,6 +266,8 @@ methods['Clearwater Quality 67%'] = clearwater('quality');
 methods['Clearwater Balanced 59%'] = clearwater('balanced');
 methods['Clearwater Performance 50%'] = clearwater('performance');
 methods['Clearwater Ultra Perf. 33%'] = clearwater('ultra-performance');
+// Auto adapts to this machine's speed, so its scores are not comparable between machines.
+if ('auto' in q) methods['Clearwater Auto (dynamic)'] = clearwater('auto');
 
 // ---------- scoring ----------
 const read = () => {
@@ -283,6 +311,32 @@ function ssim(a, b) {
     }
   return sum / n;
 }
+// Screen rectangle covered by the water this frame (readPixels rows run bottom-up).
+const corner = new T.Vector3();
+function waterRect() {
+  let x0 = W, x1 = 0, y0 = H, y1 = 0;
+  for (const [x, z] of [[-3, -2], [3, -2], [-3, 2], [3, 2]]) {
+    corner.set(x, z, 0).applyMatrix4(water.matrixWorld).project(camera);
+    x0 = Math.min(x0, (corner.x * 0.5 + 0.5) * W);
+    x1 = Math.max(x1, (corner.x * 0.5 + 0.5) * W);
+    y0 = Math.min(y0, (corner.y * 0.5 + 0.5) * H);
+    y1 = Math.max(y1, (corner.y * 0.5 + 0.5) * H);
+  }
+  // Inset so the water's edges (geometry, not shading) are left out.
+  return [Math.max(0, Math.ceil(x0) + 4), Math.min(W, Math.floor(x1) - 4), Math.max(0, Math.ceil(y0) + 4), Math.min(H, Math.floor(y1) - 4)];
+}
+const mseRect = (a, b, [x0, x1, y0, y1]) => {
+  let s = 0,
+    n = 0;
+  for (let y = y0; y < y1; y++)
+    for (let x = x0; x < x1; x++)
+      for (let c = 0; c < 3; c++) {
+        const i = (y * W + x) * 4 + c;
+        s += (a[i] - b[i]) ** 2;
+        n++;
+      }
+  return n ? s / n : 0;
+};
 const mse = (a, b) => {
   let s = 0;
   for (let i = 0; i < a.length; i++) if ((i & 3) !== 3) s += (a[i] - b[i]) ** 2;
@@ -302,6 +356,8 @@ async function run() {
     await nextFrame();
     const frame = methods[name]();
     const acc = {still: {mse: 0, ssim: 0, flick: 0, n: 0}, moving: {mse: 0, ssim: 0, flick: 0, n: 0}};
+    let waterMse = 0,
+      waterN = 0;
     let prevL = null;
     const heat = new Float32Array(W * H);
     const t0 = performance.now();
@@ -316,6 +372,8 @@ async function run() {
           l = luma(px),
           seg = f < STILL_UNTIL ? acc.still : acc.moving;
         seg.mse += mse(px, r.px);
+        waterMse += mseRect(px, r.px, waterRect());
+        waterN++;
         seg.ssim += ssim(l, r.l);
         if (prevL && f - 1 >= WARM) {
           let fl = 0;
@@ -354,32 +412,62 @@ async function run() {
       ssim: +(s.ssim / s.n).toFixed(4),
       flicker: +(s.flick / Math.max(1, s.n - 1)).toFixed(3),
     });
-    results.push({name, still: fin(acc.still), moving: fin(acc.moving), ms: Math.round((performance.now() - t0) / FRAMES)});
+    results.push({
+      name,
+      still: fin(acc.still),
+      moving: fin(acc.moving),
+      waterPsnr: +(10 * Math.log10(255 ** 2 / (waterMse / waterN))).toFixed(2),
+      ms: Math.round((performance.now() - t0) / FRAMES),
+    });
   }
   const table = document.querySelector('#results');
   table.innerHTML =
-    '<tr><th>Method</th><th>Still PSNR</th><th>Still SSIM</th><th>Still flicker</th><th>Moving PSNR</th><th>Moving SSIM</th><th>Moving flicker</th></tr>' +
+    '<tr><th>Method</th><th>Still PSNR</th><th>Still SSIM</th><th>Still flicker</th><th>Moving PSNR</th><th>Moving SSIM</th><th>Moving flicker</th><th>Water PSNR</th></tr>' +
     results
       .map(
         r =>
-          `<tr><td>${r.name}</td><td>${r.still.psnr}</td><td>${r.still.ssim}</td><td>${r.still.flicker}</td><td>${r.moving.psnr}</td><td>${r.moving.ssim}</td><td>${r.moving.flicker}</td></tr>`,
+          `<tr><td>${r.name}</td><td>${r.still.psnr}</td><td>${r.still.ssim}</td><td>${r.still.flicker}</td><td>${r.moving.psnr}</td><td>${r.moving.ssim}</td><td>${r.moving.flicker}</td><td>${r.waterPsnr}</td></tr>`,
       )
       .join('');
   log.textContent = `Done: ${W}×${H}, ${FRAMES} frames (${WARM} warm-up), reference ${SS * SS} samples per pixel.`;
   window.benchResults = {size: [W, H], frames: FRAMES, results};
   window.benchShots = shots;
 }
-if ('run' in q) run();
-else {
-  // Live view: ?view=<method name fragment>
-  const name = Object.keys(methods).find(n => n.toLowerCase().includes((q.view || 'clearwater quality').toLowerCase()));
+// Live view of one method, cycling the animation; ?view=<name fragment> or the #view picker.
+let live = null;
+function startLive(name) {
   const frame = methods[name]();
-  let f = 0;
+  let f = 0,
+    running = true;
   document.querySelector('#log').textContent = `Live: ${name}`;
   const loop = () => {
+    if (!running) return;
     pose(f % 240);
     frame(f++);
     requestAnimationFrame(loop);
   };
   loop();
+  return () => (running = false);
+}
+const names = Object.keys(methods);
+const pick = document.querySelector('#view'),
+  runButton = document.querySelector('#run');
+const firstLive = names.find(n => n.toLowerCase().includes((q.view || 'clearwater quality').toLowerCase()));
+if ('run' in q) run();
+else {
+  if (pick) {
+    pick.innerHTML = names.map(n => `<option${n === firstLive ? ' selected' : ''}>${n}</option>`).join('');
+    pick.onchange = () => {
+      live?.();
+      live = startLive(pick.value);
+    };
+  }
+  if (runButton)
+    runButton.onclick = () => {
+      live?.();
+      runButton.disabled = true;
+      if (pick) pick.disabled = true;
+      run();
+    };
+  live = startLive(firstLive);
 }

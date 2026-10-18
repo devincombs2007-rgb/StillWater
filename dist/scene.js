@@ -259,6 +259,8 @@ export function createWorld(canvas, state, onError) {
     stone.rotation.z = (Math.random() - 0.5) * 0.2;
   }
   const waterSystem = createWater(lake);
+  // The upscaler keeps only a frame of history on the animated water (see upscaler.js).
+  if (waterSystem.mesh?.material?.userData) waterSystem.mesh.material.userData.upscaleReactive = 1;
   const surroundings = createEnvironment(lake, state, waterSystem);
   skyLake.add(surroundings.sunDisc);
   const angler = createAngler(lake, state);

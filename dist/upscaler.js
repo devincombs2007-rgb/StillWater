@@ -94,6 +94,16 @@ void main() {
   gl_FragColor = vec4(motion, vDist, max(vPrev.w, 0.001));
 }`;
 
+// Reactive surfaces (material.userData.upscaleReactive = 0..1): animated transparent shading
+// such as water, whose colour changes while its geometry stays put. Written into the velocity
+// target's alpha as a negative number, with the surface's distance for the occlusion check.
+const REACTIVE_FRAG = /* glsl */ `
+uniform float reactive;
+varying float vDist;
+void main() {
+  gl_FragColor = vec4(0.0, 0.0, vDist, -reactive);
+}`;
+
 const RESOLVE_FRAG = /* glsl */ `
 precision highp float;
 uniform sampler2D tColor;
@@ -116,6 +126,8 @@ uniform float gammaMove;
 uniform float stillSpeed;
 uniform float pullPenalty;
 uniform float depthTrust;
+uniform float reactiveConf;
+uniform float cubicA;
 uniform float speedPenalty;
 uniform float kernelScale;
 uniform float ratio;
@@ -147,10 +159,14 @@ vec4 historyCatmullRom(vec2 uv) {
   vec2 pos = uv * outRes;
   vec2 c = floor(pos - 0.5) + 0.5;
   vec2 f = pos - c;
-  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
-  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
-  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
-  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  // Keys cubic with parameter a (-0.5 = Catmull-Rom; more negative = slightly sharper, which
+  // offsets the softening of resampling history every frame while the view moves).
+  float a = cubicA;
+  vec2 x0 = 1.0 + f, x1 = f, x2 = 1.0 - f, x3 = 2.0 - f;
+  vec2 w0 = ((a * x0 - 5.0 * a) * x0 + 8.0 * a) * x0 - 4.0 * a;
+  vec2 w1 = ((a + 2.0) * x1 - (a + 3.0)) * x1 * x1 + 1.0;
+  vec2 w2 = ((a + 2.0) * x2 - (a + 3.0)) * x2 * x2 + 1.0;
+  vec2 w3 = ((a * x3 - 5.0 * a) * x3 + 8.0 * a) * x3 - 4.0 * a;
   vec2 w12 = w1 + w2;
   vec2 o12 = w2 / w12;
   vec2 t0 = (c - 1.0) / outRes;
@@ -192,6 +208,7 @@ void main() {
   vec3 nearestColour = vec3(0.0);
   float nearestW = -1.0;
   float nearest = 1.0;
+  float centreDepth = 1.0;
   vec2 nearestTexel = base;
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
@@ -226,6 +243,7 @@ void main() {
       rgbLo = min(rgbLo, c);
       rgbHi = max(rgbHi, c);
       float z = texture2D(tDepth, tuv).r;
+      if (x == 0 && y == 0) centreDepth = z;
       if (z < nearest) {
         nearest = z;
         nearestTexel = t;
@@ -289,8 +307,12 @@ void main() {
     trust = 1.0 - smoothstep(0.004, 0.03, closest / expectedPrev);
     // Only where nothing nearby moves on its own: next to a moving object the history can be
     // geometrically right and still carry that object's old colours.
-    if (vel.a > 0.0 || texture2D(tVelocity, (base + 0.5) * texel).a > 0.0) trust = 0.0;
+    if (vel.a != 0.0 || texture2D(tVelocity, (base + 0.5) * texel).a != 0.0) trust = 0.0;
   }
+
+  // Reactive surface in front of this pixel's opaque surface: keep only a few frames.
+  vec4 velCentre = texture2D(tVelocity, (base + 0.5) * texel);
+  float reactive = velCentre.a < 0.0 && velCentre.b < viewDistance(centreDepth) * 1.004 + 0.01 ? -velCentre.a : 0.0;
 
   vec4 hist = historyCatmullRom(prevUv);
   float conf = (reset > 0.5 || offscreen || behindCamera || disoccluded) ? 0.0 : hist.a;
@@ -300,7 +322,7 @@ void main() {
   // detail such as wires, seen by only some jittered frames, survives and accumulates. Moving
   // pixels get a tight box clamped to the neighbourhood, which is what stops ghosting.
   float speed = length(motion * outRes);
-  float still = max(1.0 - clamp(speed / stillSpeed, 0.0, 1.0), trust * depthTrust);
+  float still = max(1.0 - clamp(speed / stillSpeed, 0.0, 1.0), trust * depthTrust) * (1.0 - reactive);
   vec3 mean = m1 / 9.0;
   vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
   float gamma = mix(gammaMove, gammaStill, still);
@@ -316,6 +338,7 @@ void main() {
   conf *= clamp(1.0 - pulled * pullPenalty, 0.2, 1.0);
   // Every resample softens history slightly, so fast-moving pixels keep less of it.
   conf *= 1.0 / (1.0 + speed * speedPenalty);
+  conf = mix(conf, min(conf, reactiveConf), reactive);
 
   // A sample sitting right on this output pixel counts fully; one a texel away counts less.
   float total = conf + coverage;
@@ -436,7 +459,7 @@ const TUNE = {
   maxConf: 8, // frames of history while moving, at native scale (more when upscaling)
   maxConfStill: 24, // frames of history where the image is still
   gammaStill: 2.5, // clip-box width (standard deviations) for still pixels
-  gammaMove: 1.0, // and for moving ones
+  gammaMove: 1.25, // and for moving ones
   stillSpeed: 1.5, // output pixels per frame counted as moving
   kernel: 0.5, // reconstruction kernel: 0 = internal-pixel sized, 1 = output-pixel sized
   sharpenBoost: 0.12, // extra RCAS strength per step of upscale ratio
@@ -445,8 +468,10 @@ const TUNE = {
   phases: 0, // jitter sequence length; 0 = automatic from the upscale ratio
   mipBias: -0.5, // extra texture LOD bias on top of log2(render scale)
   depthTrust: 1, // 0..1: how far depth-confirmed history keeps the wide clip box while moving
+  cubicA: -0.75, // history resampling cubic (-0.5 = Catmull-Rom; -0.75 measured best)
+  reactiveConf: 1, // frames of history kept on reactive surfaces
   pullPenalty: 1.5, // how much clipped (stale) history loses confidence
-  speedPenalty: 0.03, // confidence lost per output pixel of motion per frame
+  speedPenalty: 0.15, // confidence lost per output pixel of motion per frame
 };
 
 // options.msaa: hardware multisampling on the internal frame (default 4). Combined with the
@@ -482,6 +507,8 @@ export function createUpscaler(renderer, T, {msaa = 4} = {}) {
     stillSpeed: {value: 1.5},
     pullPenalty: {value: 1.5},
     depthTrust: {value: 0},
+    reactiveConf: {value: 1.5},
+    cubicA: {value: -0.5},
     speedPenalty: {value: 0.03},
     kernelScale: {value: 1},
     ratio: {value: 1},
@@ -517,11 +544,32 @@ export function createUpscaler(renderer, T, {msaa = 4} = {}) {
     velocityMat.uniforms.prevModel.value.fromArray(object.userData.prev);
     velocityMat.uniformsNeedUpdate = true;
   };
+  const reactiveMat = new T.ShaderMaterial({
+    vertexShader: VELOCITY_VERT,
+    fragmentShader: REACTIVE_FRAG,
+    uniforms: {
+      reactive: {value: 1},
+      prevModel: {value: new T.Matrix4()},
+      prevViewProj: {value: new T.Matrix4()},
+      curViewProj: {value: new T.Matrix4()},
+    },
+    side: T.DoubleSide,
+    // Drawn after the moving objects, over them where nearer, without hiding anything behind.
+    transparent: true,
+    blending: T.NoBlending,
+    depthWrite: false,
+    toneMapped: false,
+  });
+  reactiveMat.onBeforeRender = (r, s, c, g, object) => {
+    reactiveMat.uniforms.reactive.value = object.userData.reactive;
+    reactiveMat.uniformsNeedUpdate = true;
+  };
   const velocityScene = new T.Scene(),
     proxies = [];
   const proxyAt = i => {
     if (!proxies[i]) {
       const p = new T.Mesh(undefined, velocityMat);
+      p.userData.prev = new Float32Array(16);
       p.matrixAutoUpdate = false;
       p.matrixWorldAutoUpdate = false;
       velocityScene.add(p);
@@ -553,7 +601,8 @@ export function createUpscaler(renderer, T, {msaa = 4} = {}) {
     prevCamPos = new T.Vector3(),
     clearColour = new T.Color(),
     prevMatrices = new WeakMap(),
-    moving = [];
+    moving = [],
+    reactives = [];
 
   function disposeInternal() {
     for (const t of internals) {
@@ -642,12 +691,15 @@ export function createUpscaler(renderer, T, {msaa = 4} = {}) {
   // stored matrix up to date.
   function collectMoving(scenes, camera) {
     moving.length = 0;
+    reactives.length = 0;
     for (const scene of scenes)
       scene.traverseVisible(o => {
         if (!o.isMesh) return;
         if (Array.isArray(o.material)) o.material.forEach(patchMaterial);
         else if (o.material) patchMaterial(o.material);
         if (o.isInstancedMesh || !o.layers.test(camera.layers)) return;
+        const r = !Array.isArray(o.material) && o.material?.userData?.upscaleReactive;
+        if (r > 0 && reactives.length < MAX_MOVING) reactives.push(o);
         const e = o.matrixWorld.elements,
           prev = prevMatrices.get(o);
         if (!prev) {
@@ -677,17 +729,26 @@ export function createUpscaler(renderer, T, {msaa = 4} = {}) {
     renderer.setClearColor(0x000000, 0);
     renderer.clear();
     renderer.setClearColor(clearColour, clearAlpha);
-    if (!moving.length) return;
+    if (!moving.length && !reactives.length) return;
     velocityMat.uniforms.prevViewProj.value.copy(hasPrev ? prevViewProj : curViewProj);
     velocityMat.uniforms.curViewProj.value.copy(curViewProj);
     let i = 0;
-    for (; i < moving.length; i++) {
-      const o = moving[i],
-        p = proxyAt(i);
+    for (const o of moving) {
+      const p = proxyAt(i++);
+      p.material = velocityMat;
       p.geometry = o.geometry;
       p.matrixWorld.copy(o.matrixWorld);
       p.frustumCulled = o.frustumCulled;
       p.userData.prev = prevMatrices.get(o);
+      p.visible = true;
+    }
+    for (const o of reactives) {
+      const p = proxyAt(i++);
+      p.material = reactiveMat;
+      p.geometry = o.geometry;
+      p.matrixWorld.copy(o.matrixWorld);
+      p.frustumCulled = o.frustumCulled;
+      p.userData.reactive = Math.min(1, o.material.userData.upscaleReactive);
       p.visible = true;
     }
     for (; i < proxies.length; i++) proxies[i].visible = false;
@@ -765,6 +826,8 @@ export function createUpscaler(renderer, T, {msaa = 4} = {}) {
     u.gammaMove.value = tune.gammaMove;
     u.stillSpeed.value = tune.stillSpeed;
     u.pullPenalty.value = tune.pullPenalty;
+    u.reactiveConf.value = tune.reactiveConf;
+    u.cubicA.value = tune.cubicA;
     // Measured: it helps when upscaling (history carries detail the low-res frame lacks) and
     // costs a little at native scale, where the current frame alone is already sharp.
     u.depthTrust.value = tune.depthTrust * Math.min(1, Math.max(0, (ratio - 1) / 0.5));
