@@ -1,4 +1,5 @@
 import * as T from './assets/three.module.js';
+import {hookGeometry, baitModel} from './scenery.js?v=7';
 // Physical tackle: a constrained Verlet line drawn as a camera-facing ribbon, a
 // spring-buoyant bobber that sits *in* the water, bite plunges, and a hooked fish
 // that drags the float against the line while the angler reels.
@@ -99,23 +100,24 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
   );
   sinker.position.y = -0.4;
   float.add(sinker);
-  const hook = new T.Mesh(
-    new T.TorusGeometry(0.055, 0.007, 6, 20, Math.PI * 1.45),
-    new T.MeshStandardMaterial({color: '#c4d0cb', metalness: 0.9, roughness: 0.18}),
-  );
-  hook.position.y = -0.64;
-  hook.rotation.z = -0.35;
+  // A real J-hook (eye, shank, bend, point, barb) and swappable bait models on it.
+  const hook = new T.Mesh(hookGeometry(1.6), new T.MeshStandardMaterial({color: '#c4d0cb', metalness: 0.9, roughness: 0.18}));
+  hook.position.y = -0.6;
   float.add(hook);
-  const shank = new T.Mesh(new T.CylinderGeometry(0.006, 0.006, 0.09, 6), hook.material);
-  shank.position.set(0.055, -0.6, 0);
-  float.add(shank);
-  const bait = new T.Mesh(
-    new T.CapsuleGeometry(0.024, 0.07, 4, 10),
-    new T.MeshStandardMaterial({color: '#bc9d85', roughness: 0.5}),
-  );
-  bait.position.set(0.045, -0.66, 0);
-  bait.rotation.z = 0.4;
+  const bait = new T.Group();
+  bait.position.set(0, -0.6, 0);
+  bait.scale.setScalar(1.6);
   float.add(bait);
+  const baits = {};
+  let baitId = 'bare';
+  function setBait(id) {
+    baitId = id;
+    if (!baits[id] && id !== 'bare') {
+      baits[id] = baitModel(id);
+      bait.add(baits[id].group);
+    }
+    for (const [k, b] of Object.entries(baits)) b.group.visible = k === id;
+  }
   const tmp = new T.Vector3(),
     side = new T.Vector3(),
     toCam = new T.Vector3(),
@@ -137,7 +139,7 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
       old[i].copy(points[i]);
     }
   }
-  function cast(power, tip, baitColor) {
+  function cast(power, tip) {
     mode = 'flight';
     anchor.copy(tip);
     end.copy(tip);
@@ -148,7 +150,6 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     fishPull = 0;
     spin = 0;
     reset();
-    bait.material.color.set(baitColor);
     root.visible = true;
   }
   function pull(amount = 0.18) {
@@ -307,9 +308,9 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     leader.scale.y = held ? 0.25 : 1;
     leader.position.y = held ? -0.2 : -0.38;
     sinker.visible = !held;
-    hook.position.y = held ? -0.27 : -0.64;
-    shank.position.y = held ? -0.23 : -0.6;
+    hook.position.y = held ? -0.23 : -0.6;
     bait.visible = !held;
+    if (bait.visible) baits[baitId]?.animate(time);
     // A landed fish hangs straight off the hook; the float slides out of the way.
     for (const part of floatBody) part.visible = !held;
     float.position.copy(end);
@@ -376,6 +377,9 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
       } else if (['water', 'hooked', 'flight'].includes(mode)) mode = 'recall';
       else resetTackle();
     },
+    get baitId() {
+      return baitId;
+    },
     get end() {
       return end;
     },
@@ -393,6 +397,7 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     },
     hook,
     bait,
+    setBait,
     float,
   };
 }

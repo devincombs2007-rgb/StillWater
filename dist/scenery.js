@@ -608,3 +608,110 @@ export function lilyPadGeometry(seed = 1) {
   }
   return merge(parts);
 }
+
+// --- Terminal tackle -------------------------------------------------------------------
+// A J-hook: eye, straight shank, round bend, point and barb, as one tapered steel tube.
+// Origin at the eye; the hook hangs down along -y with the bend opening toward +x.
+export function hookGeometry(size = 1) {
+  const pts = [],
+    shank = 0.085 * size,
+    r = 0.026 * size;
+  for (let i = 0; i <= 6; i++) pts.push(V(0, -0.012 * size - (shank * i) / 6, 0));
+  for (let i = 1; i <= 12; i++) {
+    const a = Math.PI + (i / 12) * Math.PI;
+    pts.push(V(r + Math.cos(a) * r, -0.012 * size - shank + Math.sin(a) * r, 0));
+  }
+  pts.push(V(2 * r + 0.002 * size, -0.012 * size - shank + 0.035 * size, 0));
+  const wire = tube(pts, u => 0.0042 * size * (u > 0.85 ? 1 - (u - 0.85) * 5.2 : 1), 6, false);
+  const eye = place(new T.TorusGeometry(0.009 * size, 0.0032 * size, 6, 14), [0, -0.006 * size, 0], [0, Math.PI / 2, 0]);
+  const barb = place(new T.ConeGeometry(0.004 * size, 0.016 * size, 5), [2 * r - 0.003 * size, -0.012 * size - shank + 0.024 * size, 0], [0, 0, 0.55]);
+  return merge([wire, eye, barb]);
+}
+// Bait models by id. Each returns {group, animate(t)}; positioned around the hook bend.
+export function baitModel(id) {
+  const g = new T.Group();
+  let animate = () => {};
+  if (id === 'worm') {
+    // A banded worm threaded on the hook, its loose end wiggling.
+    const mat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.45, metalness: 0.05});
+    const bodyPts = [V(0.004, -0.03, 0), V(0.0, -0.06, 0.004), V(0.012, -0.095, 0), V(0.035, -0.115, 0), V(0.052, -0.098, 0)];
+    const worm = paint(tube(bodyPts, u => 0.0085 * (0.8 + 0.2 * Math.sin(u * Math.PI)), 7), (x, y, z, out) => out.set('#b9796b').multiplyScalar(0.85 + 0.15 * Math.sin((y + x) * 420)));
+    g.add(new T.Mesh(worm, mat));
+    const tail = new T.Group();
+    tail.position.set(0.004, -0.03, 0);
+    tail.add(new T.Mesh(paint(tube([V(0, 0, 0), V(-0.015, 0.01, 0.004), V(-0.03, 0.002, 0)], u => 0.0075 * (1 - u * 0.5), 6), '#c08a7b'), mat));
+    g.add(tail);
+    animate = t => {
+      tail.rotation.z = Math.sin(t * 6) * 0.6;
+      tail.rotation.y = Math.sin(t * 4.3) * 0.4;
+    };
+  } else if (id === 'glow') {
+    // A plump segmented grub with a soft green glow.
+    const mat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.4, emissive: '#9fd46a', emissiveIntensity: 0.45});
+    const segs = [];
+    for (let k = 0; k < 6; k++) {
+      const a = 3.6 + k * 0.42;
+      segs.push(paint(place(new T.SphereGeometry(0.012 - Math.abs(k - 2.5) * 0.0012, 10, 8), [0.026 + Math.cos(a) * 0.028, -0.103 + Math.sin(a) * 0.028, 0], [0, 0, a], [1.25, 1, 1]), '#c5dfa0'));
+    }
+    g.add(new T.Mesh(merge(segs), mat));
+    animate = t => {
+      mat.emissiveIntensity = 0.35 + 0.2 * Math.sin(t * 2.2);
+    };
+  } else if (id === 'silver') {
+    // Inline spinner: brass body and beads with a chrome blade that spins on a clevis.
+    const brass = new T.MeshStandardMaterial({color: '#c9a86a', metalness: 0.85, roughness: 0.25}),
+      chrome = new T.MeshStandardMaterial({color: '#e6ece6', metalness: 1, roughness: 0.08, side: T.DoubleSide});
+    const body = new T.Mesh(lathe([[0.001, -0.008], [0.007, -0.012], [0.009, -0.03], [0.006, -0.042], [0.001, -0.046]], 12), brass);
+    g.add(body);
+    const bead = new T.Mesh(new T.SphereGeometry(0.0055, 10, 8), new T.MeshStandardMaterial({color: '#c4463c', roughness: 0.3}));
+    bead.position.y = -0.003;
+    g.add(bead);
+    const blade = new T.Group();
+    blade.position.y = 0.006;
+    const leaf = new T.Shape();
+    leaf.moveTo(0, 0);
+    leaf.bezierCurveTo(0.014, -0.006, 0.016, -0.03, 0, -0.04);
+    leaf.bezierCurveTo(-0.004, -0.028, -0.002, -0.008, 0, 0);
+    const bl = new T.Mesh(new T.ShapeGeometry(leaf, 8), chrome);
+    bl.position.x = 0.003;
+    bl.rotation.y = 0.5;
+    blade.add(bl);
+    g.add(blade);
+    animate = t => {
+      blade.rotation.y = t * 14;
+    };
+  } else if (id === 'ocean') {
+    // Bluewater plug: a minnow-shaped lure with a diving lip and painted eyes.
+    const mat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.2, metalness: 0.35});
+    const body = lathe([[0.001, 0], [0.008, -0.006], [0.011, -0.02], [0.009, -0.045], [0.004, -0.06], [0.001, -0.064]], 12, 0.7, 1);
+    paint(body, (x, y, z, out) => out.set(x > 0.002 ? '#2e6f9e' : '#dfe8ea').lerp(new T.Color('#91c8d4'), 0.3));
+    const lip = paint(place(new T.BoxGeometry(0.016, 0.002, 0.014), [0, 0.004, 0], [0.5, 0, 0]), '#cfe6ec');
+    const eyes = [-1, 1].map(s => paint(place(new T.SphereGeometry(0.0028, 6, 5), [0.004, -0.009, s * 0.007]), '#151515'));
+    const plug = new T.Mesh(merge([body, lip, ...eyes]), mat);
+    plug.position.set(-0.006, -0.068, 0);
+    plug.rotation.z = Math.PI / 2;
+    g.add(plug);
+    animate = t => {
+      plug.rotation.x = Math.sin(t * 7) * 0.25;
+    };
+  }
+  return {group: g, animate};
+}
+
+// Viewer showcase: the hook bare and dressed with each bait.
+export function tackleShowcase() {
+  const g = new T.Group(),
+    steel = new T.MeshStandardMaterial({color: '#c4d0cb', metalness: 0.9, roughness: 0.18});
+  ['bare', 'worm', 'glow', 'silver', 'ocean'].forEach((id, i) => {
+    const h = new T.Mesh(hookGeometry(1), steel);
+    h.position.x = i * 0.12;
+    g.add(h);
+    if (id !== 'bare') {
+      const b = baitModel(id);
+      b.group.position.x = i * 0.12;
+      b.animate(1.2);
+      g.add(b.group);
+    }
+  });
+  return g;
+}

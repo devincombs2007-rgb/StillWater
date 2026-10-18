@@ -73,6 +73,14 @@ export function createWorld(canvas, state, onError) {
   const scene = new T.Scene();
   scene.background = null;
   renderer.autoClear = false;
+  let pmrem = null,
+    envTarget = null,
+    envBaked = -10;
+  try {
+    pmrem = T.PMREMGenerator && renderer.getContext ? new T.PMREMGenerator(renderer) : null;
+  } catch {
+    pmrem = null;
+  }
   renderer.setClearColor?.('#18363e');
   scene.fog = new T.FogExp2('#35575b', 0.0065);
   const camera = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 240);
@@ -1104,6 +1112,8 @@ export function createWorld(canvas, state, onError) {
         }
       }
       tackle.setCurrent?.(region === 1 ? 0.35 : 0);
+      const equipped = (BAITS[state.bait] || BAITS[0]).id;
+      if (tackle.baitId !== equipped) tackle.setBait(equipped);
       if (castState === 'reeling') tackle.fight(fightTension);
       tackle.update(dt, clock, angler.tip, camera);
       // Keep the float away from the face while the player designs their angler.
@@ -1352,6 +1362,16 @@ export function createWorld(canvas, state, onError) {
       }
     }
     skyLake.visible = view === 'lake';
+    // Image-based lighting: every few seconds the live sky is baked into an environment
+    // map, so metal, glass and wet surfaces reflect the actual sky and time of day.
+    if (pmrem && clock - envBaked > (state.quality === 'battery' ? 60 : 4)) {
+      envBaked = clock;
+      const target = pmrem.fromScene(skyScene, 0, 0.1, 400);
+      envTarget?.dispose();
+      envTarget = target;
+      scene.environment = target.texture;
+      scene.environmentIntensity = view === 'lake' ? 0.55 : 0.4;
+    }
     renderer.clear();
     renderer.render(skyScene, camera);
     renderer.clearDepth?.();
@@ -1435,7 +1455,7 @@ export function createWorld(canvas, state, onError) {
     previewCharacter: c => angler.refresh(c),
     cast: power => {
       const bait = BAITS[state.bait] || BAITS[0];
-      tackle.cast(power, angler.tip, bait.color);
+      tackle.cast(power, angler.tip);
       waterSystem.impulse(tackle.end.x, tackle.end.z, clock, 0.15);
     },
     reel: (tension, progress) => {
