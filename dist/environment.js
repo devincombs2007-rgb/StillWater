@@ -697,6 +697,8 @@ export function createEnvironment(parent, state, water) {
       anchoredMotion.kick('y', -amount * 0.4);
     },
     // Exposed for tests: distant boats' steering state and the region's land map.
+    // The sun disc is drawn by the scene's sky pass.
+    sunDisc: sun,
     get sailors() {
       return sailors;
     },

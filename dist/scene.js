@@ -71,7 +71,9 @@ export function createWorld(canvas, state, onError) {
     return obj;
   };
   const scene = new T.Scene();
-  scene.background = new T.Color('#18363e');
+  scene.background = null;
+  renderer.autoClear = false;
+  renderer.setClearColor?.('#18363e');
   scene.fog = new T.FogExp2('#35575b', 0.0065);
   const camera = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 240);
   const lake = new T.Group(),
@@ -133,7 +135,12 @@ export function createWorld(canvas, state, onError) {
     fragmentShader:
       'varying vec3 v;uniform vec3 top;uniform vec3 bottom;uniform vec3 sunDir;uniform vec3 sunColor;uniform float glow;void main(){vec3 d=normalize(v);float h=d.y;vec3 c=mix(bottom,top,smoothstep(-.04,.6,h));float s=max(0.,dot(d,sunDir));c+=sunColor*(pow(s,6.)*.35+pow(s,90.)*.8)*glow;c=mix(c,bottom*1.06,(1.-smoothstep(0.,.12,abs(h)))*.35);c*=1.-smoothstep(-.02,-.3,h)*.45;gl_FragColor=vec4(c,1.);}',
   });
-  mesh(new T.SphereGeometry(180, 24, 16), gradient, scene);
+  // The sky is its own pass, drawn first with the depth buffer cleared afterwards, so the
+  // dome, stars, moon, sun and clouds can never appear in front of any land or mountain.
+  const skyScene = new T.Scene(),
+    skyLake = new T.Group();
+  skyScene.add(skyLake);
+  mesh(new T.SphereGeometry(180, 24, 16), gradient, skyScene);
   const starPos = [];
   for (let i = 0; i < 150; i++) {
     const a = Math.random() * TAU,
@@ -147,7 +154,7 @@ export function createWorld(canvas, state, onError) {
     starGeo,
     new T.PointsMaterial({color: '#fff0ce', size: 0.27, transparent: true, opacity: 0.7, sizeAttenuation: true}),
   );
-  scene.add(stars);
+  skyScene.add(stars);
   // A loose ring of drifting clouds, lit by the same sky palette as everything else.
   const clouds = [],
     cloudGeo = new T.PlaneGeometry(1, 0.5);
@@ -159,15 +166,14 @@ export function createWorld(canvas, state, onError) {
     const size = 38 + ((i * 37) % 30);
     m.scale.set(size, size, 1);
     m.userData = {angle: -2.6 + i * 0.48 + Math.sin(i * 3.1) * 0.15, height: 34 + ((i * 13) % 22), dist: 150 + ((i * 17) % 18)};
-    m.renderOrder = -1;
-    lake.add(m);
+    skyLake.add(m);
     clouds.push(m);
   }
-  const moon = mesh(geoSphere, new T.MeshBasicMaterial({color: '#fff1ce'}), lake, [-23, 29, -88], [3, 3, 3]);
+  const moon = mesh(geoSphere, new T.MeshBasicMaterial({color: '#fff1ce'}), skyLake, [-23, 29, -88], [3, 3, 3]);
   const moonHalo = mesh(
     new T.CircleGeometry(5.2, 48),
     new T.MeshBasicMaterial({color: '#efd6ad', transparent: true, opacity: 0.07, depthWrite: false}),
-    lake,
+    skyLake,
     [-23, 29, -87.8],
   );
   function mountain(x, z, w, h, color) {
@@ -259,6 +265,7 @@ export function createWorld(canvas, state, onError) {
   }
   const waterSystem = createWater(lake);
   const surroundings = createEnvironment(lake, state, waterSystem);
+  skyLake.add(surroundings.sunDisc);
   const angler = createAngler(lake, state);
   let soundCallback = () => {};
   const tackle = createTackle(lake, waterSystem.height, (x, z, t, impact, kind = 'land') => {
@@ -1344,6 +1351,10 @@ export function createWorld(canvas, state, onError) {
         splash.material.opacity = Math.max(0, 1 - age / 1.8) * 0.8;
       }
     }
+    skyLake.visible = view === 'lake';
+    renderer.clear();
+    renderer.render(skyScene, camera);
+    renderer.clearDepth?.();
     renderer.render(scene, camera);
   }
   requestAnimationFrame(frame);
