@@ -1,7 +1,7 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture} from './textures.js?v=7';
-import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=7';
-import {BOATS} from './economy.js?v=7';
+import {surfaceTexture} from './textures.js?v=8';
+import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=8';
+import {BOATS} from './economy.js?v=8';
 import {
   broadleafGeometry,
   pineGeometry,
@@ -15,7 +15,7 @@ import {
   flapGull,
   coralGeometry,
   lilyPadGeometry,
-} from './scenery.js?v=7';
+} from './scenery.js?v=8';
 const TAU = Math.PI * 2;
 // Shoreline banks shared by the scenery, grass and the water shader's shallows.
 const BANKS = [

@@ -17,10 +17,10 @@
 // Serve the repository root and open tools/viewer.html?m=angler (or fish:koi, tree, house, ...).
 // Several models: ?m=fish:koi,fish:tang&yaw=0.6&pitch=0.2
 import * as T from '../dist/assets/three.module.js';
-import {createAngler} from '../dist/angler.js?v=7';
-import {createFish} from '../dist/fish.js?v=7';
-import {SPECIES, freshState} from '../dist/economy.js?v=7';
-const scenery = await import('../dist/scenery.js?v=7').catch(() => ({}));
+import {createAngler} from '../dist/angler.js?v=8';
+import {createFish} from '../dist/fish.js?v=8';
+import {SPECIES, freshState} from '../dist/economy.js?v=8';
+const scenery = await import('../dist/scenery.js?v=8').catch(() => ({}));
 const q = new URLSearchParams(location.search);
 const names = (q.get('m') || 'angler').split(',');
 const renderer = new T.WebGLRenderer({antialias: true});
@@ -42,7 +42,7 @@ scene.add(rim);
 const root = new T.Group();
 scene.add(root);
 const state = freshState();
-state.character = {name: 'Viewer', skin: Number(q.get('skin') || 1), hair: Number(q.get('hair') || 1), style: Number(q.get('style') || 0)};
+state.character = {name: 'Viewer', skin: Number(q.get('skin') || 1), hair: Number(q.get('hair') || 1), style: Number(q.get("style") || 0), eyes: Number(q.get("eyes") || 0), facial: Number(q.get("facial") || 0)};
 for (const k of ['shirt', 'hat', 'glasses', 'pants', 'shoes']) if (q.get(k)) state.outfit[k] = q.get(k);
 let angler = null;
 let x = 0;

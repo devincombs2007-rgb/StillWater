@@ -1026,7 +1026,9 @@ export function sanitize(raw, now = Date.now()) {
       name: cleanName(s.character.name) || 'Angler',
       skin: Math.min(4, Math.floor(n(s.character.skin))),
       hair: Math.min(3, Math.floor(n(s.character.hair))),
-      style: Math.min(2, Math.floor(n(s.character.style))),
+      style: Math.min(5, Math.floor(n(s.character.style))),
+      eyes: Math.min(4, Math.floor(n(s.character.eyes))),
+      facial: Math.min(3, Math.floor(n(s.character.facial))),
     };
   else s.character = null;
   if (s.pending) {

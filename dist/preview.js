@@ -1,8 +1,9 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=7';
-import {createAngler} from './angler.js?v=7';
-import {freshState} from './economy.js?v=7';
-import {surfaceTexture} from './textures.js?v=7';
+import {createFish, animateFish, disposeFish} from './fish.js?v=8';
+import {createAngler} from './angler.js?v=8';
+import {freshState} from './economy.js?v=8';
+import {surfaceTexture} from './textures.js?v=8';
+import {loft, tube} from './models.js?v=8';
 let renderer = null,
   scene,
   camera,
@@ -240,7 +241,7 @@ function buildShop() {
   sign.rotation.x = -0.25;
   // Milo himself.
   const st = freshState();
-  st.character = {name: 'Milo', skin: 1, hair: 2, style: 1};
+  st.character = {name: 'Milo', skin: 1, hair: 2, style: 1, eyes: 1, facial: 2};
   st.outfit.hat = 'hat1';
   const rig = createAngler(keeperScene, st);
   rig.group.position.set(0, 0, -0.45);
@@ -249,21 +250,19 @@ function buildShop() {
   rig.materials.hair.color.set('#a39b8c');
   rig.materials.cloth.color.set('#e7ce9e');
   rig.materials.hat.color.set('#6f8f78');
-  const apronMat = new T.MeshStandardMaterial({color: '#527a6d', roughness: 0.85, map: surfaceTexture('cloth'), side: T.DoubleSide});
-  const apron = new T.Mesh(new T.CylinderGeometry(0.29, 0.31, 1.0, 20, 1, true, -Math.PI * 0.42, Math.PI * 0.84), apronMat);
-  apron.scale.set(1.15, 1, 0.78);
-  apron.position.set(0, 1.25, 0);
-  rig.group.add(apron);
-  const bib = new T.Mesh(new T.BoxGeometry(0.3, 0.32, 0.02), apronMat);
-  bib.position.set(0, 1.66, 0.2);
+  // Work apron shaped to his body: a wrap skirt, a bib following the chest, and straps.
+  const apronMat = new T.MeshStandardMaterial({color: '#527a6d', roughness: 0.85, map: surfaceTexture('cloth')});
+  rig.group.add(new T.Mesh(loft([[0.74, 0.238, 0.162, 0.004], [1.0, 0.229, 0.153, 0.004], [1.3, 0.214, 0.146, 0.006]], 28, 2.4, false, false), apronMat));
+  const bib = new T.Mesh(new T.BoxGeometry(0.26, 0.34, 0.012), apronMat);
+  bib.position.set(0, 1.58, 0.158);
+  bib.rotation.x = 0.1;
   rig.group.add(bib);
-  const pocket = new T.Mesh(new T.BoxGeometry(0.2, 0.12, 0.02), new T.MeshStandardMaterial({color: '#416959', roughness: 0.9}));
-  pocket.position.set(0, 1.62, 0.212);
+  for (const sx of [-1, 1])
+    rig.group.add(new T.Mesh(tube([[sx * 0.115, 1.74, 0.162], [sx * 0.15, 1.93, 0.1], [sx * 0.155, 1.97, -0.04], [sx * 0.13, 1.72, -0.14]], 0.011, 6, false), apronMat));
+  const pocket = new T.Mesh(new T.BoxGeometry(0.19, 0.11, 0.012), new T.MeshStandardMaterial({color: '#416959', roughness: 0.9}));
+  pocket.position.set(0, 1.5, 0.167);
+  pocket.rotation.x = 0.1;
   rig.group.add(pocket);
-  const tash = new T.Mesh(new T.CapsuleGeometry(0.018, 0.07, 4, 8), rig.materials.hair);
-  tash.rotation.z = Math.PI / 2;
-  tash.position.set(0, -0.075, 0.2);
-  rig.head.add(tash);
   milo = rig;
   keeperCamera = new T.PerspectiveCamera(32, 1.3, 0.1, 30);
 }

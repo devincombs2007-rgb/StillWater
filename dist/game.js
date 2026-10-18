@@ -33,7 +33,7 @@ import {
   rebirth,
   effectiveRod,
   apparelLuck,
-} from './economy.js?v=7';
+} from './economy.js?v=8';
 import {
   worldConditions,
   startEncounter,
@@ -43,12 +43,13 @@ import {
   resolveFailure,
   reelProfile,
   isReelHit,
-} from './fishing.js?v=7';
-import {createWorld} from './scene.js?v=7';
-import {createAudio} from './audio.js?v=7';
-import {showPreview, stopPreview} from './preview.js?v=7';
-import {fishThumbnail, showKeeper, stopKeeper} from './preview.js?v=7';
-import {fishSvg} from './art.js?v=7';
+} from './fishing.js?v=8';
+import {createWorld} from './scene.js?v=8';
+import {SKINS, HAIRS, EYES, HAIR_STYLES, FACIAL_HAIR} from './angler.js?v=8';
+import {createAudio} from './audio.js?v=8';
+import {showPreview, stopPreview} from './preview.js?v=8';
+import {fishThumbnail, showKeeper, stopKeeper} from './preview.js?v=8';
+import {fishSvg} from './art.js?v=8';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
   esc = v =>
@@ -83,7 +84,8 @@ let currentView = 'lake',
   nextTap = 0,
   pending = state.pending || null,
   encounter = null,
-  creation = {name: 'Angler', skin: 0, hair: 0, style: 0},
+  creation = {name: 'Angler', skin: 0, hair: 0, style: 0, eyes: 0, facial: 0},
+  creationTab = 'face',
   confirmRebirth = false,
   lastTick = performance.now(),
   lastSave = lastTick,
@@ -441,7 +443,24 @@ document.addEventListener('keyup', e => {
     cast();
   }
 });
-all('nav button').forEach(b => (b.onclick = () => setView(b.dataset.view)));
+// Dip the world to deep water-blue and back so view and place changes never hard-cut.
+function dip(change) {
+  const veil = $('#veil');
+  if (reduced || !veil?.classList) return change();
+  veil.classList.add('on');
+  setTimeout(() => {
+    change();
+    setTimeout(() => veil.classList.remove('on'), 160);
+  }, 320);
+}
+all('nav button').forEach(
+  b =>
+    (b.onclick = () => {
+      const v = b.dataset.view;
+      if (v === currentView || !['lake', 'tank'].includes(v) || stage !== 'idle') setView(v);
+      else dip(() => setView(v));
+    }),
+);
 $('.brand').onclick = e => {
   e.preventDefault();
   if (stage === 'idle') setView('lake');
@@ -721,7 +740,19 @@ function inspectView() {
   return `<div class="fish-profile" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A LIFE YOU CAN INVEST IN</span><h2 id="panel-title">${esc(r.nickname || f.name)}</h2><div class="rarity">${RARITIES[f.rarity]} · ${f.name}</div>${modelMarkup(f)}<div class="profile-stats"><div><strong>${fishWeight(r).toFixed(2)} kg</strong><span>Weight now</span></div><div><strong>${Math.round(age * 100)}%</strong><span>Mature</span></div><div><strong>${r.potential.toFixed(2)}×</strong><span>Potential</span></div></div><div class="collection-meter"><span style="width:${age * 100}%"></span></div><p>Care ${r.care}/3 · release value ${releaseValue(r)} pearls. Natural growth takes up to 45 minutes, modified by potential. Nurture sessions add two minutes of growth.</p><button class="secondary-button" id="upgrade-fish" ${r.care >= 3 || state.pearls < cost ? 'disabled' : ''}>${r.care >= 3 ? 'Care complete' : 'Care upgrade · ' + cost + ' ◇'}</button><label class="name-label" for="fish-nickname">A NAME, JUST FOR THEM</label><div class="name-row"><input id="fish-nickname" maxlength="24" value="${esc(r.nickname || '')}" placeholder="${f.name}"><button class="secondary-button" id="save-nickname">Save name</button></div><button class="text-button" id="back-residents">Meet the rest of your fish ↗</button></div>`;
 }
 function characterView() {
-  return `<span class="eyebrow">YOUR ANGLER · A PERMANENT FIRST CHOICE</span><h2 id="panel-title">Meet the person by the water.</h2><p>Your name and base appearance are set when you begin. Shirts, hats, sunglasses, trousers, and shoes can be changed later at the market.</p><label class="name-label" for="character-name">NAME</label><input class="character-name" id="character-name" maxlength="24" value="${esc(creation.name)}"><div class="eyebrow section-space">SKIN TONE</div><div class="swatches">${['#edc7a6', '#d3a37e', '#b17f5c', '#875e45', '#624735'].map((c, i) => `<button data-skin="${i}" aria-label="Skin tone ${i + 1}" style="background:${c}" class="${creation.skin === i ? 'chosen' : ''}"></button>`).join('')}</div><div class="eyebrow section-space">HAIR</div><div class="swatches">${['#302b29', '#65503b', '#a58455', '#352b32'].map((c, i) => `<button data-hair="${i}" aria-label="Hair color ${i + 1}" style="background:${c}" class="${creation.hair === i ? 'chosen' : ''}"></button>`).join('')}</div><div class="quality-options">${['Soft waves', 'Classic', 'Close cut'].map((n, i) => `<button class="secondary-button" data-style="${i}" ${creation.style === i ? 'disabled' : ''}>${n}</button>`).join('')}</div><button class="primary-button" id="create-character">Begin my angler’s story ↗</button>`;
+  const swatch = (attr, colors, label) =>
+    `<div class="swatches">${colors.map((c, i) => `<button data-${attr}="${i}" aria-label="${label} ${i + 1}" style="background:${c}" class="${creation[attr] === i ? 'chosen' : ''}"></button>`).join('')}</div>`;
+  const chips = (attr, names) =>
+    `<div class="quality-options look-chips">${names.map((n, i) => `<button class="secondary-button" data-${attr}="${i}" aria-pressed="${creation[attr] === i}" ${creation[attr] === i ? 'disabled' : ''}>${n}</button>`).join('')}</div>`;
+  const tabs = [
+    ['face', 'Face'],
+    ['hair', 'Hair'],
+  ];
+  const body =
+    creationTab === 'hair'
+      ? `<div class="eyebrow section-space">HAIR COLOUR</div>${swatch('hair', HAIRS, 'Hair colour')}<div class="eyebrow section-space">STYLE</div>${chips('style', HAIR_STYLES)}`
+      : `<div class="eyebrow section-space">SKIN TONE</div>${swatch('skin', SKINS, 'Skin tone')}<div class="eyebrow section-space">EYES</div>${swatch('eyes', EYES, 'Eye colour')}<div class="eyebrow section-space">FACIAL HAIR</div>${chips('facial', FACIAL_HAIR)}`;
+  return `<span class="eyebrow">YOUR ANGLER · A PERMANENT FIRST CHOICE</span><h2 id="panel-title">Meet the person by the water.</h2><p>Drag to turn them around. Shirts, hats, sunglasses, trousers, and shoes can be changed later at the market.</p><label class="name-label" for="character-name">NAME</label><input class="character-name" id="character-name" maxlength="24" value="${esc(creation.name)}"><div class="look-tabs" role="tablist">${tabs.map(([id, n]) => `<button role="tab" class="look-tab${creationTab === id ? ' chosen' : ''}" data-look-tab="${id}" aria-selected="${creationTab === id}">${n}</button>`).join('')}<button class="look-tab" id="random-look" aria-label="Random look">⟳ Surprise me</button></div>${body}<button class="primary-button" id="create-character">Begin my angler’s story ↗</button>`;
 }
 function helpView() {
   return `<span class="eyebrow">THE LIVING WATER UPDATE · 1.5</span><h2 id="panel-title">Read the water. Earn the catch.</h2><div class="help-steps"><p><b>Cast & hook.</b> Hold and release to cast. Watch the float: small twitches are curious fish, a hard plunge is a bite. Not every cast gets a bite. Set the hook within the short bite window. Once a line is out, you can tap anywhere on the scene to hook and reel.</p><p><b>Fight & tension.</b> Common fish have a wide, slow timing window. Rarer fish have a narrower window and faster marker. Tap inside the glowing zone to reel; each pull brings the bobber closer. Misses raise tension and slack. Wait to lower tension, but take too long and the fish escapes. Overpowered tackle can snap. Let go to protect your rod. Stronger rods and lines are separate purchases.</p><p><b>Raise & invest.</b> Keeping a catch drops it into the aquarium. Baby fish grow, care upgrades improve income and value, and feeding costs 8 pearls for a small growth boost. There is no hunger penalty. Market purchases compete for your pearls. Buy bait once for unlimited casts; bait unlocks survive rebirth.</p><p><b>Your fixed angler.</b> Drag in 3D mode to orbit; switch to first person to see your hands. A landed fish moves to the front camera and hangs from the hook. Drag the scene to turn it.</p><p><b>Shortcuts.</b> Space or Enter casts and reels. 1–4 switch between the lake, aquarium, bait shop and field notes. C swaps the camera.</p><p><b>World conditions.</b> A 20-minute world day and changing simulated weather affect odds. Catfish and some deep-water fish favor night; trout favor dawn. These are game-balance rules, not a real-world forecast.</p></div><div class="audio-options"><button class="secondary-button" id="options-sound">${state.audioOn ? 'Sound on · tap to mute' : 'Sound off · tap to enable'}</button><div class="quality-options">${[
@@ -856,20 +887,32 @@ function bindPanel() {
     };
   }
   if (panelType === 'character') {
-    for (const [attr, key] of [
-      ['skin', 'skin'],
-      ['hair', 'hair'],
-      ['style', 'style'],
-    ])
-      all('[data-' + attr + ']').forEach(
+    const keepName = () => (creation.name = cleanName($('#character-name').value) || 'Angler');
+    for (const key of ['skin', 'hair', 'style', 'eyes', 'facial'])
+      all('[data-' + key + ']').forEach(
         b =>
           (b.onclick = () => {
-            creation.name = cleanName($('#character-name').value) || 'Angler';
-            creation[key] = Number(b.dataset[attr]);
-            world?.previewCharacter?.(creation);
+            keepName();
+            creation[key] = Number(b.dataset[key]);
+            world?.previewCharacter?.(creation, key === 'skin' ? 'body' : 'face');
             openPanel('character');
           }),
       );
+    all('[data-look-tab]').forEach(
+      b =>
+        (b.onclick = () => {
+          keepName();
+          creationTab = b.dataset.lookTab;
+          openPanel('character');
+        }),
+    );
+    $('#random-look').onclick = () => {
+      keepName();
+      const pick = n => Math.floor(Math.random() * n);
+      Object.assign(creation, {skin: pick(SKINS.length), hair: pick(HAIRS.length), style: pick(HAIR_STYLES.length), eyes: pick(EYES.length), facial: pick(FACIAL_HAIR.length)});
+      world?.previewCharacter?.(creation, 'face');
+      openPanel('character');
+    };
     $('#create-character').onclick = () => {
       creation.name = cleanName($('#character-name').value) || 'Angler';
       state.character = {...creation};
@@ -904,11 +947,13 @@ function bindPanel() {
             i = Number(n);
           if (kind === 'visit') {
             state.region = i;
-            world?.setRegion(i);
-            conditions = worldConditions(Date.now(), i);
             save();
             closePanel();
-            setView('lake');
+            dip(() => {
+              world?.setRegion(i);
+              conditions = worldConditions(Date.now(), i);
+              setView('lake');
+            });
             return;
           }
           if (kind === 'bait-equip') {
@@ -1204,7 +1249,11 @@ function updateSoundButton(on) {
   document.body.classList.toggle('sound-on', on);
   $('#sound').setAttribute('aria-label', on ? 'Mute water sounds' : 'Enable water sounds');
 }
+let titleShown = false;
 function showTitle() {
+  if (titleShown) return;
+  titleShown = true;
+  if (!reduced) world?.startIntro?.();
   document.body.classList.add('intro-done');
   $('#loading').style.opacity = '0';
   setTimeout(() => {
@@ -1228,7 +1277,10 @@ $('#skip-intro').onclick = showTitle;
 function enterGame() {
   inTitle = false;
   document.body.classList.remove('title-mode');
-  $('#title-screen').hidden = true;
+  // The title copy fades away while the camera glides from the boat to the angler.
+  setTimeout(() => {
+    if (!inTitle) $('#title-screen').hidden = true;
+  }, 900);
   world?.setTitle?.(false);
   setStage('idle');
   setView('lake');

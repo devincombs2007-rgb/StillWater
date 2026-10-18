@@ -213,3 +213,47 @@ export function consolidate(root) {
   }
   return removed;
 }
+
+// Loft a tube through cross-sections: [y, halfWidth, halfDepth, zOffset]. Sections are
+// superellipses (n > 2 is squarer), so torsos and limbs read as bodies, not balloons.
+export function loft(sections, segments = 24, n = 2.4, capTop = true, capBottom = true) {
+  const pos = [],
+    uv = [],
+    index = [],
+    rows = sections.length,
+    e = 2 / n;
+  for (let r = 0; r < rows; r++) {
+    const [y, w, d, zo = 0, xo = 0] = sections[r];
+    for (let s = 0; s <= segments; s++) {
+      const a = (s / segments) * Math.PI * 2,
+        c = Math.cos(a),
+        si = Math.sin(a);
+      pos.push(xo + w * Math.sign(c) * Math.pow(Math.abs(c), e), y, zo + d * Math.sign(si) * Math.pow(Math.abs(si), e));
+      uv.push(s / segments, r / (rows - 1));
+    }
+  }
+  for (let r = 0; r < rows - 1; r++)
+    for (let s = 0; s < segments; s++) {
+      const a = r * (segments + 1) + s,
+        b = a + segments + 1;
+      index.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  const cap = (r, flip) => {
+    const [y, , , zo = 0, xo = 0] = sections[r],
+      centre = pos.length / 3;
+    pos.push(xo, y, zo);
+    uv.push(0.5, r / (rows - 1));
+    for (let s = 0; s < segments; s++) {
+      const a = r * (segments + 1) + s;
+      flip ? index.push(centre, a + 1, a) : index.push(centre, a, a + 1);
+    }
+  };
+  if (capBottom) cap(0, false);
+  if (capTop) cap(rows - 1, true);
+  const g = new T.BufferGeometry();
+  g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new T.Float32BufferAttribute(uv, 2));
+  g.setIndex(index);
+  g.computeVertexNormals();
+  return g;
+}

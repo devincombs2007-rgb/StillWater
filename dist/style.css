@@ -1268,6 +1268,15 @@ nav,
 .vignette {
   transition: opacity 0.4s;
 }
+/* Entering from the title, the interface settles in after the camera starts moving. */
+body:not(.title-mode) header,
+body:not(.title-mode) main,
+body:not(.title-mode) nav {
+  transition: opacity 0.9s 0.35s;
+}
+body:not(.title-mode) nav {
+  transition-delay: 0.55s;
+}
 .primary-button {
   position: relative;
   overflow: hidden;
@@ -1853,6 +1862,54 @@ nav,
   border-color: #f0e2ba;
   box-shadow: 0 0 0 4px #e3dbb91a;
 }
+.look-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 18px 0 4px;
+  border-bottom: 1px solid var(--line);
+}
+.look-tab {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font: 11px Arial, sans-serif;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  padding: 9px 10px;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s;
+}
+.look-tab.chosen {
+  color: var(--cream);
+  border-bottom-color: var(--gold);
+}
+#random-look {
+  margin-left: auto;
+  letter-spacing: 0.6px;
+  text-transform: none;
+}
+.look-chips {
+  margin: 4px 0 6px;
+  gap: 6px;
+}
+.look-chips button {
+  padding: 8px 11px;
+  font-size: 12px;
+}
+.look-chips button:disabled {
+  opacity: 1;
+  border-color: var(--gold);
+  color: var(--cream);
+  background: #e4b98522;
+}
+.swatches button {
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+.swatches button:hover {
+  transform: scale(1.08);
+}
 .character-name:focus {
   outline: 1px solid var(--gold);
 }
@@ -2098,6 +2155,18 @@ nav,
     max-height: 53dvh;
   }
 }
+#veil {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 42%, #1a3a40, #071317 75%);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+#veil.on {
+  opacity: 1;
+  transition: opacity 0.3s ease-in;
+}
 body.scene-travel #world {
   animation: travel-fade 0.75s ease-in-out;
 }
@@ -2122,7 +2191,102 @@ body.title-mode nav {
   pointer-events: none;
 }
 body:not(.title-mode) #title-screen {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.8s;
+}
+#title-screen[hidden] {
   display: none;
+}
+/* Title reveal: each line rises in after the camera starts its glide. */
+@keyframes title-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+body.intro-done .title-copy > *,
+body.intro-done .title-menu button,
+body.intro-done .title-location {
+  animation: title-rise 1.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+body.intro-done .title-copy > .eyebrow {
+  animation-delay: 1.1s;
+}
+body.intro-done .title-copy > h1 {
+  animation-delay: 1.5s;
+  animation-duration: 1.8s;
+}
+body.intro-done .title-copy > p {
+  animation-delay: 2.2s;
+}
+body.intro-done .title-copy > .title-menu {
+  animation: none;
+}
+body.intro-done .title-menu button:nth-child(1) {
+  animation-delay: 2.7s;
+}
+body.intro-done .title-menu button:nth-child(2) {
+  animation-delay: 2.85s;
+}
+body.intro-done .title-menu button:nth-child(3) {
+  animation-delay: 3s;
+}
+body.intro-done .title-menu button:nth-child(4) {
+  animation-delay: 3.15s;
+}
+body.intro-done .title-copy > small {
+  animation-delay: 3.5s;
+}
+body.intro-done .title-location {
+  animation-delay: 3.8s;
+}
+/* Tap-to-begin: the mark breathes and rings ripple out from it. */
+.intro-begin > span {
+  position: relative;
+  animation: mark-breathe 4s ease-in-out infinite;
+}
+.intro-begin > span::before,
+.intro-begin > span::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 70px;
+  height: 70px;
+  margin: -35px 0 0 -35px;
+  border: 1px solid #d2bc9455;
+  border-radius: 50%;
+  animation: ripple 4s ease-out infinite;
+  pointer-events: none;
+}
+.intro-begin > span::after {
+  animation-delay: 2s;
+}
+@keyframes ripple {
+  from {
+    transform: scale(0.4);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.4);
+    opacity: 0;
+  }
+}
+@keyframes mark-breathe {
+  50% {
+    opacity: 0.65;
+    transform: translateY(-2px);
+  }
+}
+#loading .intro-begin {
+  animation: title-rise 1.6s 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 #title-screen {
   position: fixed;
@@ -2409,5 +2573,16 @@ body.intro-done #title-screen {
   }
   .title-menu button:hover {
     transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.intro-done .title-copy > *,
+  body.intro-done .title-menu button,
+  body.intro-done .title-location,
+  #loading .intro-begin,
+  .intro-begin > span,
+  .intro-begin > span::before,
+  .intro-begin > span::after {
+    animation: none !important;
   }
 }

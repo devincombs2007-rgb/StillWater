@@ -1,5 +1,5 @@
 import * as T from './assets/three.module.js';
-import {merge, paint} from './models.js?v=7';
+import {merge, paint} from './models.js?v=8';
 const PI = Math.PI,
   TAU = PI * 2;
 const white = new T.Color('#f2dfb5'),

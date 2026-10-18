@@ -1,15 +1,15 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=7';
-import {makeSwimmer, stepSwimmer} from './swimming.js?v=7';
-import {createWater, createEnvironment, addSway} from './environment.js?v=7';
-import {createAngler} from './angler.js?v=7';
-import {createTackle} from './tackle.js?v=7';
-import {surfaceTexture, cloudTexture} from './textures.js?v=7';
-import {rockGeometry, dockGeometry, lantern, reedGeometry} from './scenery.js?v=7';
-import {place, merge, fbm, paint, tube, displace, lathe} from './models.js?v=7';
-import {createTankSurface} from './surface.js?v=7';
-import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=7';
-import {worldConditions} from './fishing.js?v=7';
+import {createFish, animateFish, disposeFish} from './fish.js?v=8';
+import {makeSwimmer, stepSwimmer} from './swimming.js?v=8';
+import {createWater, createEnvironment, addSway} from './environment.js?v=8';
+import {createAngler} from './angler.js?v=8';
+import {createTackle} from './tackle.js?v=8';
+import {surfaceTexture, cloudTexture} from './textures.js?v=8';
+import {rockGeometry, dockGeometry, lantern, reedGeometry} from './scenery.js?v=8';
+import {place, merge, fbm, paint, tube, displace, lathe} from './models.js?v=8';
+import {createTankSurface} from './surface.js?v=8';
+import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=8';
+import {worldConditions} from './fishing.js?v=8';
 const TAU = Math.PI * 2;
 // Sky keys across the 20-minute world day: [cycle, zenith, horizon, sun colour].
 const SKY = [
@@ -766,6 +766,9 @@ export function createWorld(canvas, state, onError) {
     immersive = false,
     lookY = 2.5,
     lakeTheta = 0.4,
+    createYaw = 0.35,
+    createFocus = 'body',
+    introFly = 1,
     lakePhi = 1.2,
     lakeRadius = 7.2,
     lookAhead = 5,
@@ -933,6 +936,7 @@ export function createWorld(canvas, state, onError) {
     } else if (drag) {
       if (view === 'lake') {
         if (castState === 'catch') catchTwist += (e.clientX - drag.x) * 0.012;
+        else if (castState === 'create') createYaw -= (e.clientX - drag.x) * 0.008;
         else if (state.cameraMode === 'third') {
           lakeTheta -= (e.clientX - drag.x) * 0.006;
           lakePhi = Math.max(0.55, Math.min(1.5, lakePhi + (e.clientY - drag.y) * 0.004));
@@ -1064,18 +1068,42 @@ export function createWorld(canvas, state, onError) {
       const isCatch = ['landing', 'catch', 'create', 'travel'].includes(castState);
       const desired = new T.Vector3(),
         target = new T.Vector3();
-      if (titleMode) {
+      if (castState === 'create') {
+        // Character creation: a slow turntable around the angler that leans in on the face
+        // while face and hair options are being picked. Drag turns it.
+        const face = createFocus === 'face',
+          gy = angler.group.position.y,
+          r = face ? (mobile ? 1.7 : 1.2) : mobile ? 6.2 : 3.6,
+          yaw = createYaw + Math.sin(clock * 0.25) * 0.12;
+        desired.set(-Math.sin(yaw) * r, gy + (face ? 2.28 : mobile ? 1.6 : 1.9), 8.8 - Math.cos(yaw) * r);
+        // Phones keep the angler in the upper half, above the creation panel.
+        target.set(0, gy + (face ? (mobile ? 1.85 : 2.22) : mobile ? -0.3 : 1.3), 8.8);
+        if (!mobile) {
+          const right = new T.Vector3().subVectors(target, desired).cross(camera.up).normalize();
+          target.addScaledVector(right, face ? 0.3 : 1.05);
+        }
+      } else if (titleMode) {
         // Portrait phones put the boat below the title copy instead of behind the menu.
         const tall = camera.aspect < 0.8;
         desired.set(13 + Math.sin(clock * 0.04) * 0.5, tall ? 4.4 : 3.4, tall ? 21 : 18);
         target.set(tall ? -1.2 : 0, tall ? 3.3 : 1.35, 6.8);
+        if (introFly < 1) {
+          // Opening glide: from high over the water down to the boat as the title appears.
+          introFly = Math.min(1, introFly + dt / 6.5);
+          const k = 1 - introFly * introFly * (3 - 2 * introFly);
+          desired.add(new T.Vector3(-5 * k, 11 * k, 24 * k));
+          target.add(new T.Vector3(0, -1.2 * k, -6 * k));
+          camera.position.copy(desired);
+          cameraLook.copy(target);
+        }
       } else if (isCatch) {
         desired.set(mobile ? 3.9 : 4.5, 3.0, 3.2);
         // Desktop keeps the dangling catch left of the stats panel.
         target.set(mobile ? 0 : -0.7, mobile ? 1.3 : 2.1, mobile ? 8.35 : 7.7);
       } else if (state.cameraMode === 'first') {
-        desired.set(-0.08, 2.45 + angler.group.position.y, 8.48);
-        target.set(-0.08, 0.1, -13);
+        // Eye height with the head hidden, pitched down so the hands and reel sit low in frame.
+        desired.set(-0.03, 2.38 + angler.group.position.y, 8.74);
+        target.set(-0.5, -5.1 + angler.group.position.y, -13);
       } else {
         // Orbit around the angler, but aim down the cast so the float stays framed,
         // including on narrow portrait screens.
@@ -1379,6 +1407,7 @@ export function createWorld(canvas, state, onError) {
   }
   requestAnimationFrame(frame);
   return {
+    startIntro: () => (introFly = 0),
     setTitle: on => {
       titleMode = on;
       castState = on ? 'title' : 'idle';
@@ -1452,7 +1481,10 @@ export function createWorld(canvas, state, onError) {
     },
     setCamera: () => {},
     refreshCharacter: () => angler.refresh(),
-    previewCharacter: c => angler.refresh(c),
+    previewCharacter: (c, focus) => {
+      angler.refresh(c);
+      if (focus) createFocus = focus;
+    },
     cast: power => {
       const bait = BAITS[state.bait] || BAITS[0];
       tackle.cast(power, angler.tip);
