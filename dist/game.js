@@ -1005,7 +1005,13 @@ function upscaleNote() {
   if (state.upscaler === 'off') return 'Off: every pixel is drawn directly, with no temporal anti-aliasing.';
   const size = a => `${a[0]}×${a[1]}`;
   const live = info?.active ? ` Drawing ${size(info.input)}, reconstructed to ${size(info.output)}.` : '';
-  return `${state.upscaler === 'native' ? 'Full-resolution temporal anti-aliasing.' : 'Draws fewer pixels and rebuilds full detail from several frames.'}${live}`;
+  const what =
+    state.upscaler === 'native'
+      ? 'Full-resolution temporal anti-aliasing.'
+      : state.upscaler === 'auto'
+        ? `Dynamic resolution: the render scale moves between 50% and 100% to hold the frame rate${info?.active ? ` (now ${info.scale}%)` : ''}.`
+        : 'Draws fewer pixels and rebuilds full detail from several frames.';
+  return `${what}${live}`;
 }
 function helpView() {
   return `<span class="eyebrow">SANCTUARY CHRONICLES UPDATE · V${VERSION}</span><h2 id="panel-title">Read the water. Earn the catch.</h2><div class="help-steps"><p><b>Cast &amp; hook.</b> Hold and release to cast. Watch the float: small twitches are curious fish, a hard plunge is a bite. Not every cast gets a bite. Set the hook within the short bite window. Once a line is out, you can tap anywhere on the scene to hook and reel.</p><p><b>Fight, sweet-spot &amp; rhythm.</b> Tap inside the glowing zone to reel; hitting the golden center triggers a <b>Perfect Pull</b> (+28% distance, lower tension). Stringing together <b>3 hits in a row</b> fills the rhythm pips and triggers a <b>Steady Rhythm</b> burst that calms the fish and eases line tension. Watch the fish’s posture—reeling while it glides/rests is gentler than pulling while it darts.</p><p><b>Raise &amp; invest.</b> Keeping a catch drops it into the aquarium. Baby fish grow, care upgrades improve income and value, and feeding costs 8 pearls for a growth boost. Check Milo’s Bait Shop for his rotating <b>Daily Tide Request</b> (1.5× release value + bonus pearls).</p><p><b>Story Chronicles &amp; Milestones.</b> Follow the 8-chapter <b>Sanctuary Chronicles</b> on the lake HUD (or in Field Notes) for narrative progression and permanent keepsake bonuses, or toggle to classic Catch Milestones.</p><p><b>Shortcuts.</b> Space or Enter casts and reels. 1–4 switch between the lake, aquarium, bait shop and field notes. C swaps the camera.</p><p><b>World conditions.</b> A 20-minute world day and changing simulated weather affect odds. Catfish and some deep-water fish favor night; trout favor dawn.</p></div><div class="eyebrow section-space">VIDEO SETTINGS · GRAPHICAL FIDELITY</div><div class="quality-options video-tiers">${[
@@ -1031,7 +1037,9 @@ function helpView() {
     )
     .join('')}</div><div class="eyebrow section-space">UPSCALER · CLEARWATER TEMPORAL SUPER RESOLUTION</div><p class="upscale-note">${upscaleNote()}</p><div class="quality-options video-tiers">${[
     ['off', 'Off'],
+    ['auto', 'Auto (dynamic)'],
     ['native', 'Native AA'],
+    ['ultra-quality', 'Ultra Quality'],
     ['quality', 'Quality'],
     ['balanced', 'Balanced'],
     ['performance', 'Performance'],
@@ -1203,6 +1211,9 @@ function bindPanel() {
       const clean = {
         ...freshState(),
         quality: state.quality,
+        rayTracing: state.rayTracing,
+        upscaler: state.upscaler,
+        sharpness: state.sharpness,
         audioOn: state.audioOn,
         volume: state.volume,
         haptics: state.haptics,

@@ -1078,7 +1078,7 @@ export function fishWeight(f, now = Date.now()) {
 }
 export const QUALITY_TIERS = ['ultra-low', 'low', 'medium', 'high', 'very-high', 'ultra'];
 // Temporal upscaler modes (scene's upscaler.js holds the render scale for each).
-export const UPSCALER_MODES = ['off', 'native', 'quality', 'balanced', 'performance', 'ultra-performance'];
+export const UPSCALER_MODES = ['off', 'auto', 'native', 'ultra-quality', 'quality', 'balanced', 'performance', 'ultra-performance'];
 export const MORPH_NAMES = {pearl: 'Pearl Iridescent', starlight: 'Starlight Shimmer', golden: 'Sunlit Gold'};
 export function releaseValue(f, now = Date.now()) {
   const sp = SPECIES.find(x => x.id === f.id),
@@ -1167,6 +1167,9 @@ export function sanitize(raw, now = Date.now()) {
   s.quality = QUALITY_TIERS.includes(s.quality) ? s.quality : 'high';
   s.rayTracing = ['auto', 'on', 'off'].includes(s.rayTracing) ? s.rayTracing : 'auto';
   s.upscaler = UPSCALER_MODES.includes(s.upscaler) ? s.upscaler : 'quality';
+  // Gemini's v1.8.1 build stored sharpening as upscalerSharpness, with the same three names.
+  if (raw?.sharpness === undefined && s.upscalerSharpness !== undefined) s.sharpness = s.upscalerSharpness;
+  delete s.upscalerSharpness;
   s.sharpness = ['soft', 'standard', 'crisp'].includes(s.sharpness) ? s.sharpness : 'standard';
   s.musicOn = s.musicOn !== false;
   s.bredCount = n(s.bredCount, 0);

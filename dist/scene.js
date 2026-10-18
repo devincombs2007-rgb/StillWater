@@ -1667,7 +1667,12 @@ export function createWorld(canvas, state, onError) {
     if (view !== upscaleView || region !== upscaleRegion) upscaler.reset();
     upscaleView = view;
     upscaleRegion = region;
-    upscaler.render(drawMain, camera, state.upscaler, state.sharpness);
+    upscaler.render(drawMain, camera, {
+      mode: state.upscaler,
+      sharpness: state.sharpness,
+      fps: profile(state).fps,
+      scenes: [scene],
+    });
   }
   const drawMain = () => {
     renderer.clear();
