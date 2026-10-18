@@ -44,6 +44,10 @@ import {
   reelProfile,
   isReelHit,
 } from './fishing.js?v=8';
+// The one place the release number lives; shown faintly in a corner like any shipped game.
+// BUILD must match index.html's stillwater-build marker (the offline test checks it).
+export const VERSION = '1.6.0',
+  BUILD = 8;
 import {createWorld} from './scene.js?v=8';
 import {SKINS, HAIRS, EYES, HAIR_STYLES, FACIAL_HAIR} from './angler.js?v=8';
 import {createAudio} from './audio.js?v=8';
@@ -1262,6 +1266,7 @@ document.addEventListener('visibilitychange', () => {
   save();
 });
 window.addEventListener('pagehide', save);
+$('#build-label').textContent = 'Stillwater v' + VERSION + ' · build ' + BUILD;
 hud();
 setStage('idle');
 setView('lake');

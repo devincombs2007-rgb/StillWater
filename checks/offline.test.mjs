@@ -22,4 +22,5 @@ console.log('PASS: iPhone home-screen metadata, safe-area viewport, no-selection
 for(const f of (await readdir(dir)).filter(f=>f.endsWith('.js')&&f!=='sw.js')){const code=await readFile(new URL(f,dir),'utf8');
  for(const [,m] of code.matchAll(/from '\.\/([\w-]+\.js)\?v=(\d+)'/g)){assert.ok(src.includes(`'./${m}?v=${build}'`),`${f} imports ${m}, which the offline cache must list at v${build}`);}
  for(const [,v] of code.matchAll(/from '\.\/[\w-]+\.js\?v=(\d+)'/g))assert.equal(v,build,`${f} imports a module at a stale version`);}
-console.log('PASS: every module the game imports is in the offline cache at the current build version.');}
+assert.match(await readFile(new URL('game.js',dir),'utf8'),new RegExp(`BUILD = ${build};`),'the on-screen build number matches the build marker');
+console.log('PASS: every module the game imports is in the offline cache at the current build version, and the on-screen build number matches.');}

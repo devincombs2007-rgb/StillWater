@@ -89,8 +89,9 @@ export function createWorld(canvas, state, onError) {
     pmrem = null;
   }
   renderer.setClearColor?.('#18363e');
-  scene.fog = new T.FogExp2('#35575b', 0.0065);
-  const camera = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 240);
+  scene.fog = new T.FogExp2('#35575b', 0.0045);
+  // The far plane reaches the mountains all round the water (land.js); fog hides the rest.
+  const camera = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 900);
   const lake = new T.Group(),
     tank = new T.Group();
   scene.add(lake, tank);
@@ -191,42 +192,6 @@ export function createWorld(canvas, state, onError) {
     skyLake,
     [-23, 29, -87.8],
   );
-  function mountain(x, z, w, h, color) {
-    // Fractal ridge line; the tallest crests carry a little snow via vertex colour.
-    const g = new T.BufferGeometry(),
-      verts = [],
-      colors = [],
-      steps = 72,
-      seed = x * 0.13 + z * 0.07;
-    const ridge = u =>
-      Math.max(0.03, Math.pow(Math.sin(u * Math.PI), 0.8)) * (0.72 + fbm(u * 5, seed, 0, 3, 4) * 0.55 + Math.abs(fbm(u * 19, seed, 1, 5, 2)) * 0.18);
-    for (let i = 0; i < steps; i++) {
-      const u1 = i / steps,
-        u2 = (i + 1) / steps,
-        x1 = -w / 2 + u1 * w,
-        x2 = -w / 2 + u2 * w,
-        a = ridge(u1) * h,
-        b = ridge(u2) * h;
-      verts.push(x1, 0, 0, x2, 0, 0, x1, a, 0, x2, 0, 0, x2, b, 0, x1, a, 0);
-      const snow = y => (h > 40 && y > h * 0.82 ? 1.55 : 1),
-        foot = 0.82;
-      colors.push(foot, foot, foot, foot, foot, foot, snow(a), snow(a), snow(a), foot, foot, foot, snow(b), snow(b), snow(b), snow(a), snow(a), snow(a));
-    }
-    g.setAttribute('position', new T.Float32BufferAttribute(verts, 3));
-    g.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
-    g.computeVertexNormals();
-    const m = mesh(g, new T.MeshBasicMaterial({color, side: T.DoubleSide, vertexColors: true}), lake, [x, -0.2, z]);
-    // Distant ranges take their colour from the sky (aerial perspective) instead of glowing at night.
-    ranges.push({mesh: m, base: new T.Color(color), haze: Math.min(0.75, Math.max(0.2, (-z - 50) / 120))});
-    return m;
-  }
-  const ranges = [];
-  mountain(-70, -135, 140, 50, '#6b8d8c');
-  mountain(44, -135, 160, 49, '#6b8d8c');
-  mountain(-30, -100, 130, 35, '#4b7375');
-  mountain(80, -99, 130, 39, '#4b7375');
-  mountain(-95, -65, 140, 35, '#31595d');
-  mountain(65, -65, 100, 29, '#345d60');
   const treeMat = mat('#183f40');
   // A mossy cascade gives Fernwater its own silhouette and moving current.
   const creek = new T.Group();
@@ -916,7 +881,7 @@ export function createWorld(canvas, state, onError) {
     view = v;
     lake.visible = v === 'lake';
     tank.visible = v === 'tank';
-    scene.fog.density = v === 'lake' ? 0.0065 : 0.012;
+    scene.fog.density = v === 'lake' ? 0.0045 : 0.012;
     pointers.clear();
     tapStart = null;
     drag = null;
@@ -1149,7 +1114,19 @@ export function createWorld(canvas, state, onError) {
         target.set(out ? tackle.end.x * 0.35 : 0, 1.3, 8.8 - lookAhead * behind);
       }
       camera.position.lerp(desired, 1 - Math.exp(-dt * 3.6));
+      // Never let an orbit swing the camera into the hillside.
+      camera.position.y = Math.max(camera.position.y, surroundings.groundAt(camera.position.x, camera.position.z) + 0.8);
       cameraLook.lerp(target, 1 - Math.exp(-dt * 3.6));
+      // First person widens the lens so the rod and hands sit in a scene, not in your face.
+      const wantFov = state.cameraMode === 'first' && !isCatch && !titleMode ? 68 : 50;
+      if (Math.abs(camera.fov - wantFov) > 0.05) {
+        camera.fov += (wantFov - camera.fov) * (1 - Math.exp(-dt * 4));
+        camera.updateProjectionMatrix();
+      }
+      if (devCam?.p) {
+        camera.position.copy(devCam.p);
+        cameraLook.copy(devCam.t);
+      }
       camera.lookAt(cameraLook);
       lakeLife(dt);
       if (tossed) {
@@ -1276,12 +1253,12 @@ export function createWorld(canvas, state, onError) {
       hemi.groundColor.set(region >= 3 ? '#2a4a50' : '#22392f');
       hemi.intensity += ((night ? 0.85 : dusk ? 1.5 : 1.9) - hemi.intensity) * blend;
       fill.intensity = night ? 0.45 : 0.9;
-      const rangeLight = night ? 0.3 : dusk ? 0.62 : 0.92;
-      // Far out on the Open Blue there is no land in sight.
-      for (const r of ranges) r.mesh.visible = titleMode || region !== 5;
-      for (const r of ranges)
-        r.mesh.material.color.copy(r.base).multiplyScalar(rangeLight).lerp(gradient.uniforms.bottom.value, r.haze);
       scene.fog.color.copy(gradient.uniforms.bottom.value).multiplyScalar(0.78);
+      // Haze thickens with the weather: clear air shows the far ranges, mist swallows them.
+      if (view === 'lake') {
+        const haze = {clear: 0.0042, wind: 0.0038, mist: 0.0098, rain: 0.0068}[conditions.weather] ?? 0.0042;
+        scene.fog.density += ((titleMode ? 0.0045 : haze) - scene.fog.density) * blend;
+      }
       const wu = waterSystem.uniforms;
       wu.detail.value = state.quality === 'battery' ? 0 : 1;
       wu.skyTop.value.copy(gradient.uniforms.top.value);
@@ -1437,6 +1414,20 @@ export function createWorld(canvas, state, onError) {
     renderer.clearDepth?.();
     renderer.render(scene, camera);
   }
+  // Development only (?dev in the URL): place the camera anywhere to inspect the world.
+  const devCam = typeof location !== 'undefined' && /[?&]dev\b/.test(location.search) ? {} : null;
+  if (devCam)
+    window.__dev = {
+      cam: (p, t) => {
+        devCam.p = p && new T.Vector3(...p);
+        devCam.t = t && new T.Vector3(...t);
+      },
+      region: r => {
+        region = r;
+        state.region = r;
+        applyPalette();
+      },
+    };
   requestAnimationFrame(frame);
   return {
     startIntro: () => (introFly = 0),

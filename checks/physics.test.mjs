@@ -20,5 +20,6 @@ console.log('PASS: damped hull dynamics follow the water slope with inertia.');}
 const parent=new T3.Group(),w=createWater(parent),env=createEnvironment(parent,freshState(),w),c={weather:'clear',phase:'day',cycle:.3,swell:1};
 for(let region=0;region<6;region++){let t=0;w.update(t,region,c);env.update(.1,t,region,c);const start=env.sailors.map(s=>({x:s.x,z:s.z})),travel=env.sailors.map(()=>0);
 for(let k=0;k<6000;k++){t+=.2;const before=env.sailors.map(s=>({x:s.x,z:s.z}));env.update(.2,t,region,c);env.sailors.forEach((s,i)=>{travel[i]+=Math.hypot(s.x-before[i].x,s.z-before[i].z);assert.ok(env.landHeight(s.x,s.z)<-0.2,`region ${region}: boat ${i} ran aground at ${s.x.toFixed(1)},${s.z.toFixed(1)}`);});}
-for(const d of travel)assert.ok(d>150,`region ${region}: boats keep sailing (${d.toFixed(0)} m)`);void start;}
-console.log('PASS: distant boats stay on open water in all six regions over 20 simulated minutes and keep moving.');}
+env.sailors.forEach((s,i)=>s.moored?assert.ok(travel[i]<1&&Math.hypot(s.x-start[i].x,s.z-start[i].z)<1,`region ${region}: boat ${i} stays at anchor`):assert.ok(travel[i]>120,`region ${region}: boat ${i} keeps sailing (${travel[i].toFixed(0)} m)`));
+assert.ok(env.sailors.length<=4&&env.sailors.filter(s=>s.moored).length>=2,'at most four distant boats, at least two at anchor');}
+console.log('PASS: distant boats stay on open water in all six regions over 20 simulated minutes; two sail, two ride at anchor.');}

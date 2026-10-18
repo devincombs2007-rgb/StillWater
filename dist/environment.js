@@ -2,6 +2,7 @@ import * as T from './assets/three.module.js';
 import {surfaceTexture} from './textures.js?v=8';
 import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=8';
 import {BOATS} from './economy.js?v=8';
+import {createLand, landHeight as regionLand, landDistance} from './land.js?v=8';
 import {
   broadleafGeometry,
   pineGeometry,
@@ -17,18 +18,6 @@ import {
   lilyPadGeometry,
 } from './scenery.js?v=8';
 const TAU = Math.PI * 2;
-// Shoreline banks shared by the scenery, grass and the water shader's shallows.
-const BANKS = [
-  {cx: -23, cz: -7, w: 27, h: 3.4},
-  {cx: 27, cz: -16, w: 32, h: 4.5},
-];
-export function bankHeight(x, z) {
-  const b = x < 0 ? BANKS[0] : BANKS[1],
-    xx = x - b.cx,
-    zz = z - b.cz,
-    edge = Math.max(0, 1 - Math.pow(Math.abs(xx) / (b.w * 0.5), 2));
-  return -0.25 + Math.pow(edge, 0.7) * (b.h + Math.sin(xx * 0.25 + zz * 0.18) * b.h * 0.22 + Math.sin(zz * 0.47) * 0.2);
-}
 const IMPULSES = 16;
 // Coherent surface model. The GLSL and JS height functions are kept identical so the
 // float, boats and drips ride exactly the waves that are drawn.
@@ -75,7 +64,11 @@ export function createWater(parent) {
     reefShoal: {value: 0},
     current: {value: 0},
     biolume: {value: 0},
+    // Land under the water for shallows and shore foam (set by createEnvironment).
+    shoreTex: {value: new T.DataTexture(new Uint8Array([0]), 1, 1, T.RedFormat)},
+    shoreBox: {value: new T.Vector4(-130, -180, 260, 230)},
   };
+  uniforms.shoreTex.value.needsUpdate = true;
   const wave = `float height(vec2 p){float a=mix(.048,.22,ocean)*swell;
     float h=sin(p.x*.45+p.y*.68+time*.9)*a+sin(p.x*.71-p.y*.32+time*.7)*a*.55+sin(p.y*1.8+time*1.1)*.018
       +sin(p.x*1.3-p.y*.92+time*1.6)*a*.18+sin(p.x*-.23+p.y*.31+time*.52)*a*.42+sin(p.x*2.1+p.y*1.7+time*2.3)*a*.07;
@@ -83,7 +76,9 @@ export function createWater(parent) {
       if(age>0.&&age<8.)h+=sin(d*6.-age*8.)*exp(-pow(d-age*2.8,2.)*.7)*exp(-age*.65)*impulses[i].w;}
     return h;}`;
   // Horizontal distance from the nearest freshwater bank edge into open water.
-  const bank = `float shoreDist(vec2 q){vec2 b=q.x<0.?vec2(-23.,13.5):vec2(27.,16.);return abs(q.x-b.x)-b.y;}`;
+  // Land height under the water, baked by land.js for the current region (-4..4 in 0..1).
+  const bank = `uniform sampler2D shoreTex;uniform vec4 shoreBox;
+    float landUnder(vec2 q){vec2 uv=(q-shoreBox.xy)/shoreBox.zw;if(uv.x<0.||uv.y<0.||uv.x>1.||uv.y>1.)return -4.;return texture2D(shoreTex,uv).r*8.-4.;}`;
   const mat = new T.ShaderMaterial({
     uniforms,
     side: T.DoubleSide,
@@ -105,7 +100,7 @@ export function createWater(parent) {
         vec3 refl=reflect(-view,n);float up=clamp(refl.y,0.,1.);
         vec3 sky=mix(skyHorizon,skyTop,pow(up,.55));
         vec3 deep=mix(vec3(.03,.13,.13),vec3(.015,.11,.18),ocean),shallow=mix(vec3(.12,.3,.24),vec3(.06,.38,.42),ocean);
-        float sd=shoreDist(p.xz);float zr=p.x<0.?step(-41.,p.z)*step(p.z,27.):step(-53.5,p.z)*step(p.z,21.5);float shore=ocean>.5?0.:(1.-smoothstep(-.2,3.2,sd))*zr;float lap=ocean>.5?0.:(1.-smoothstep(.0,.55,abs(sd-.15+.12*sin(p.z*.9+time*.8))))*zr;
+        float lh=landUnder(p.xz);float shore=smoothstep(-.75,-.2,lh);float lap=(1.-smoothstep(0.,.09,abs(lh+.06+.025*sin(p.z*.9+p.x*.4+time*.8))))*step(-.6,lh);
         vec3 body=mix(deep,shallow,.25+.2*sin(p.x*.14+p.z*.18)+shore*.55);
         body=mix(body,vec3(.42,.43,.3),shore*shore*.55);body=mix(body,tint,tintAmount);float shoal=reefShoal*smoothstep(.15,.75,sin(p.x*.13+sin(p.z*.11)*2.)*sin(p.z*.09+p.x*.05)+.25);body=mix(body,vec3(.45,.78,.7),shoal*.55);
         vec3 color=mix(body*light,sky,clamp(fres*.85+.08,0.,1.));
@@ -121,6 +116,8 @@ export function createWater(parent) {
   });
   const mesh = new T.Mesh(waterGrid(192, 160), mat);
   mesh.name = 'Lake water';
+  // Drawn after hull water masks (renderOrder 1) so it never shows inside a boat.
+  mesh.renderOrder = 2;
   parent.add(mesh);
   function height(x, z, t) {
     const a = (ocean ? 0.22 : 0.048) * swell;
@@ -260,6 +257,21 @@ export function boatModel(size = 1, style = 0) {
   geo.computeVertexNormals();
   const hull = bmesh(geo, bmat('#ffffff', {vertexColors: true, roughness: 0.55, side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], g);
   hull.name = 'Hull';
+  // Invisible lid across the gunwales: it writes depth only, after the boat and before the
+  // sea, so the sea surface can never show through inside the hull as the boat rolls.
+  const lidPos = [],
+    lidIdx = [];
+  for (let i = 0; i <= hullStations; i++) {
+    for (const a of [0, 1]) lidPos.push(...hullPoint(i / hullStations, a));
+    if (i < hullStations) lidIdx.push(i * 2, i * 2 + 1, i * 2 + 2, i * 2 + 1, i * 2 + 3, i * 2 + 2);
+  }
+  const lidGeo = new T.BufferGeometry();
+  lidGeo.setAttribute('position', new T.Float32BufferAttribute(lidPos, 3));
+  lidGeo.setIndex(lidIdx);
+  const lid = new T.Mesh(lidGeo, new T.MeshBasicMaterial({colorWrite: false, side: T.DoubleSide}));
+  lid.renderOrder = 1;
+  lid.name = 'Hull water mask';
+  g.add(lid);
   const woodLight = bmat('#b39f7b', {map: surfaceTexture('wood')}),
     woodDark = bmat('#7e6849', {map: surfaceTexture('wood')});
   for (const sideSign of [-1, 1]) {
@@ -298,6 +310,10 @@ export function createEnvironment(parent, state, water) {
     common = new T.Group();
   parent.add(fresh, salt, common);
   salt.visible = false;
+  // One continuous landscape per water (land.js): banks, hills and mountains all round, so
+  // there is no strip of land to see past or under. The water reads its shallows from it.
+  const land = createLand(common, state.region || 0, state.quality);
+  if (water.uniforms.shoreTex) water.uniforms.shoreTex.value = land.shoreTexture;
   const mat = (color, extra = {}) => new T.MeshStandardMaterial({color, roughness: 0.85, ...extra});
   const sphere = new T.SphereGeometry(1, 16, 12),
     box = new T.BoxGeometry(1, 1, 1),
@@ -316,8 +332,9 @@ export function createEnvironment(parent, state, water) {
     for (let i = 0; i < a.count; i++) {
       const x = a.getX(i),
         z = a.getZ(i),
-        edge = Math.max(0, 1 - Math.pow(Math.abs(x) / (w * 0.5), 2));
-      const y = -0.25 + Math.pow(edge, 0.7) * (h + Math.sin(x * 0.25 + z * 0.18) * h * 0.22 + Math.sin(z * 0.47) * 0.2);
+        // Falls off on all four sides, so the patch never ends in a cut edge above water.
+        edge = Math.max(0, 1 - Math.pow(Math.abs(x) / (w * 0.5), 2)) * Math.max(0, 1 - Math.pow(Math.abs(z) / (d * 0.5), 4));
+      const y = -0.6 + Math.pow(edge, 0.7) * (h + 0.35 + Math.sin(x * 0.25 + z * 0.18) * h * 0.22 + Math.sin(z * 0.47) * 0.2);
       a.setY(i, y);
     }
     g.computeVertexNormals();
@@ -325,20 +342,9 @@ export function createEnvironment(parent, state, water) {
     land.receiveShadow = true;
     return land;
   }
-  terrain(-23, -7, 27, 68, 3.4, '#55745b');
-  terrain(27, -16, 32, 75, 4.5, '#506f56');
-  terrain(0, 35, 80, 35, 3, '#58715a');
-  function ground(x, z) {
-    const left = x < 0,
-      cx = left ? -23 : 27,
-      cz = left ? -7 : -16,
-      w = left ? 27 : 32,
-      h = left ? 3.4 : 4.5,
-      xx = x - cx,
-      zz = z - cz,
-      edge = Math.max(0, 1 - Math.pow(Math.abs(xx) / (w * 0.5), 2));
-    return -0.25 + Math.pow(edge, 0.7) * (h + Math.sin(xx * 0.25 + zz * 0.18) * h * 0.22 + Math.sin(zz * 0.47) * 0.2);
-  }
+  // Freshwater scenery sits on the shared lake landscape (identical near the banks in all
+  // three freshwater regions).
+  const ground = (x, z) => regionLand(0, x, z);
   // Banks of broadleaf trees mixed with conifers; a few shared variants are instanced so
   // the whole wood stays a handful of draw calls.
   const foliage = addSway(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.88}), 0.025, 1.4),
@@ -350,7 +356,7 @@ export function createEnvironment(parent, state, water) {
       x = side * (12 + Math.random() * 17),
       z = -35 + Math.random() * 55,
       kind = Math.random() < 0.3 ? 5 + (i % 3) : i % 5;
-    placements[kind].push([x, ground(x, z) - 0.05, z, 0.85 + Math.random() * 0.45, Math.random() * TAU]);
+    placements[kind].push([x, ground(x, z) - 0.05, z, 1.25 + Math.random() * 0.7, Math.random() * TAU]);
   }
   treeKinds.forEach((geo, k) => {
     if (!placements[k].length) return;
@@ -372,13 +378,7 @@ export function createEnvironment(parent, state, water) {
   for (let i = 0; i < GRASS_MAX; i++) {
     const side = i % 2 ? -1 : 1;
     matrix.position.set(side * (11.3 + Math.random() * 15), 1, -30 + Math.random() * 48);
-    const xx = matrix.position.x - (side < 0 ? -23 : 27),
-      zz = matrix.position.z - (side < 0 ? -7 : -16),
-      hh = side < 0 ? 3.4 : 4.5,
-      ww = side < 0 ? 27 : 32,
-      edge = Math.max(0, 1 - Math.pow(Math.abs(xx) / (ww * 0.5), 2));
-    matrix.position.y =
-      -0.25 + Math.pow(edge, 0.7) * (hh + Math.sin(xx * 0.25 + zz * 0.18) * hh * 0.22 + Math.sin(zz * 0.47) * 0.2);
+    matrix.position.y = ground(matrix.position.x, matrix.position.z) - 0.05;
     matrix.scale.set(0.7 + Math.random(), 0.45 + Math.random(), 1);
     matrix.rotation.set(0.05, Math.random() * TAU, (Math.random() - 0.5) * 0.4);
     matrix.updateMatrix();
@@ -424,31 +424,82 @@ export function createEnvironment(parent, state, water) {
     fresh.add(stones);
   });
   const glowMat = mat('#f7dcad', {emissive: '#e8b674', emissiveIntensity: 0.2});
-  for (let i = 0; i < 6; i++) {
-    const x = 16 + i * 4.3,
-      z = -29 - (i % 2) * 5,
+  // The lakeside road follows the right-hand shore at a steady 15 units inland, so it runs
+  // along the level bank top (never down a slope into the lake). Cars, walkers and cottages
+  // all use it.
+  const roadPoints = [];
+  for (let z = 46; z >= -150; z -= 3) {
+    let x = 11;
+    while (landDistance(0, x, z) < 0 && x < 140) x += 0.5;
+    roadPoints.push(new T.Vector3(x + 15, 0, z));
+  }
+  const roadCurve = new T.CatmullRomCurve3(roadPoints),
+    roadLength = roadCurve.getLength(),
+    // Real scale (1 m = 1.37 units; the angler is 2.45): a two-lane road about 6.5 m wide.
+    ROAD_W = 9,
+    roadSegs = 320,
+    roadPos = [],
+    roadCol = [],
+    roadIdx = [];
+  const sideOf = (u, off, out = new T.Vector3()) => {
+    const p = roadCurve.getPointAt(u),
+      t = roadCurve.getTangentAt(u);
+    return out.set(p.x - t.z * off, 0, p.z + t.x * off);
+  };
+  const tarmac = new T.Color('#34383a'),
+    verge = new T.Color('#6f6c5c'),
+    paint = new T.Color('#cfc8ab');
+  for (let i = 0; i <= roadSegs; i++) {
+    const u = i / roadSegs;
+    for (const [k, off] of [-ROAD_W / 2 - 0.9, -ROAD_W / 2, -0.09, 0.09, ROAD_W / 2, ROAD_W / 2 + 0.9].entries()) {
+      const q = sideOf(u, off);
+      roadPos.push(q.x, ground(q.x, q.z) + (k === 0 || k === 5 ? 0.02 : 0.07), q.z);
+      // Dashed centre line, plain tarmac, gravel verges.
+      const c = k === 0 || k === 5 ? verge : (k === 2 || k === 3) && Math.floor((u * roadLength) / 4.5) % 2 ? paint : tarmac;
+      roadCol.push(c.r, c.g, c.b);
+    }
+    if (i < roadSegs)
+      for (let k = 0; k < 5; k++) {
+        const a = i * 6 + k,
+          b = a + 6;
+        roadIdx.push(a, a + 1, b, a + 1, b + 1, b);
+      }
+  }
+  const roadGeo = new T.BufferGeometry();
+  roadGeo.setAttribute('position', new T.Float32BufferAttribute(roadPos, 3));
+  roadGeo.setAttribute('color', new T.Float32BufferAttribute(roadCol, 3));
+  roadGeo.setIndex(roadIdx);
+  roadGeo.computeVertexNormals();
+  const road = new T.Mesh(roadGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95, envMapIntensity: 0.3}));
+  road.receiveShadow = true;
+  fresh.add(road);
+  // Cottages stand back from the road on the inland side, facing it and the lake.
+  for (let i = 0; i < 7; i++) {
+    const u = 0.1 + i * 0.05 + (i % 2) * 0.015,
+      q = sideOf(u, 15 + (i % 3) * 2.5),
+      t = roadCurve.getTangentAt(u),
       h = cottage(i + 1, glowMat);
-    h.position.set(x, ground(x, z) - 0.1, z);
-    h.scale.setScalar(0.62 + Math.random() * 0.25);
-    h.rotation.y = (Math.random() - 0.5) * 0.3;
+    h.position.set(q.x, ground(q.x, q.z) - 0.12, q.z);
+    h.scale.setScalar(1.55 + ((i * 37) % 10) * 0.05);
+    h.rotation.y = Math.atan2(t.z, -t.x) + ((i % 3) - 1) * 0.12;
     fresh.add(h);
   }
-  const roadGeo = new T.PlaneGeometry(28, 2.3, 48, 1);
-  roadGeo.rotateX(-Math.PI / 2);
-  const roadVertices = roadGeo.attributes.position;
-  for (let i = 0; i < roadVertices.count; i++)
-    roadVertices.setY(i, ground(roadVertices.getX(i) + 25, roadVertices.getZ(i) - 21) + 0.045);
-  roadGeo.computeVertexNormals();
-  const road = mesh(roadGeo, mat('#646c64'), [25, 0, -21], [1, 1, 1]);
   const cars = [];
   for (let i = 0; i < 4; i++) {
     const c = carModel(i + 1);
+    c.rotation.order = 'YXZ';
+    c.userData.u = i / 4;
+    c.userData.dir = i % 2 ? -1 : 1;
+    c.userData.speed = 9 + (i % 3) * 1.6;
     fresh.add(c);
     cars.push(c);
   }
   const walkers = [];
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 6; i++) {
     const w = walkerModel(i + 1);
+    w.scale.setScalar(1.8 + ((i * 7) % 5) * 0.05);
+    w.userData.u = 0.04 + i * 0.05;
+    w.userData.dir = i % 2 ? -1 : 1;
     fresh.add(w);
     walkers.push(w);
   }
@@ -459,8 +510,6 @@ export function createEnvironment(parent, state, water) {
     island = new T.Group(),
     reef = new T.Group();
   salt.add(harbor, island, reef);
-  terrain(-42, -63, 46, 42, 4, '#b5b28b', island);
-  terrain(44, -89, 45, 35, 5, '#a1a985', harbor);
   const coralMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.7, side: T.DoubleSide});
   addSway(coralMat, 0.02, 0.6);
   // Staghorn (seed % 3 === 0) and brain corals (seed % 3 === 1); sea fans stay out of sight.
@@ -497,16 +546,19 @@ export function createEnvironment(parent, state, water) {
   quay.receiveShadow = true;
   mesh(box, mat('#6f6d63', {roughness: 0.95}), [-13.5, 1.22, -75.6], [50, 0.12, 0.5], harbor);
   for (let k = 0; k < 12; k++) mesh(cyl, mat('#4c4a43'), [-37 + k * 4.3, 0.3, -75.3], [0.18, 1.4, 0.18], harbor);
-  for (let i = 0; i < 14; i++) {
+  // Waterfront at real scale: seven buildings two to four storeys high along the quay.
+  for (let i = 0; i < 7; i++) {
     const b = harborBuilding(i + 1, glowMat);
-    b.position.set(-35 + i * 3.3, 1, -79 - (i % 3) * 3);
+    b.position.set(-34 + i * 6.8, 1.15, -80.5 - (i % 3) * 2.4);
+    b.scale.setScalar(2 + ((i * 5) % 4) * 0.15);
     harbor.add(b);
   }
   const boat = boatModel;
   const fleet = [],
     sailors = [];
-  for (let i = 0; i < 5; i++) {
-    const b = boat(0.5 + i * 0.1, i % 2);
+  // Four distant boats: two under way, two riding at anchor.
+  for (let i = 0; i < 4; i++) {
+    const b = boat(0.55 + i * 0.12, i % 2);
     common.add(b);
     if (i % 2 === 0) {
       mesh(cyl, mat('#a8b4a6'), [0, 1.6, 0], [0.035, 3.2, 0.035], b);
@@ -529,42 +581,44 @@ export function createEnvironment(parent, state, water) {
       mesh(sail([[-0.06, 2.6], [-0.06, 0.7], [-1.2, 0.7]], 0.18), mat('#e3dcc6', {side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], b);
     }
     fleet.push(b);
-    const sailor = {x: 0, z: -30 - i * 6, heading: Math.random() * Math.PI * 2, speed: 0.8, cruise: 0.7 + i * 0.12, size: 0.5 + i * 0.1, seed: i * 1.7, turnLeft: 0};
+    const sailor = {x: 0, z: -90 - i * 6, heading: Math.random() * Math.PI * 2, speed: 0.6, cruise: 0.55 + i * 0.1, size: 0.55 + i * 0.12, seed: i * 1.7, turnLeft: 0, moored: i >= 2};
     sailors.push(sailor);
   }
-  // Land under a point for the current region (water level is 0). Rectangles match the
-  // terrain() banks and islands above, so boats see the same shore the player sees.
-  const rect = (x, z, cx, cz, w, d, h) => {
-    if (Math.abs(z - cz) > d / 2) return -1;
-    const xx = x - cx,
-      zz = z - cz,
-      edge = Math.max(0, 1 - Math.pow(Math.abs(xx) / (w * 0.5), 2));
-    return edge > 0 ? -0.25 + Math.pow(edge, 0.7) * (h + Math.sin(xx * 0.25 + zz * 0.18) * h * 0.22 + Math.sin(zz * 0.47) * 0.2) : -1;
-  };
   let currentRegion = state.region || 0,
     fleetRegion = -1;
-  function landHeight(x, z) {
-    const r = currentRegion;
-    if (r >= 3) {
-      let h = -1;
-      if (r <= 4) h = Math.max(h, rect(x, z, -42, -63, 46, 42, 4));
-      if (r === 3) h = Math.max(h, rect(x, z, 44, -89, 45, 35, 5), Math.abs(x + 13.5) < 25 && Math.abs(z + 83) < 7.5 ? 1 : -1);
-      return h;
-    }
-    // Freshwater: the two banks, the meadow behind the dock, and the mountain foot far out.
-    if (z < -60) return 1;
-    return Math.max(rect(x, z, -23, -7, 27, 68, 3.4), rect(x, z, 27, -16, 32, 75, 4.5), rect(x, z, 0, 35, 80, 35, 3));
-  }
+  // Land under a point for the current region (water level is 0): the same landscape the
+  // player sees, so boats see the real shore.
+  const landHeight = (x, z) => regionLand(currentRegion, x, z);
+  // Each water's sailing area, where distant boats are visible without crowding the view.
+  const SAIL = [
+    [-70, 70, -175, -62],
+    [-70, 70, -175, -62],
+    [-70, 70, -175, -62],
+    [-90, 90, -72, -18],
+    [-90, 90, -150, -18],
+    [-100, 100, -170, -18],
+  ];
+  // Moorings: two boats in every water sit at anchor instead of all of them sailing.
+  const MOORINGS = [
+    [[-36, -128], [44, -112]],
+    [[-36, -128], [44, -112]],
+    [[-36, -128], [44, -112]],
+    [[-24, -71.5], [-3, -71.5]],
+    [[-20, -50], [28, -44]],
+    [[-42, -95], [60, -62]],
+  ];
   // Open water with a hull-sized margin, inside the distant sailing area.
   function sailable(x, z) {
-    if (Math.abs(x) > 60 || z > -12 || z < -64) return false;
+    const [x0, x1, z0, z1] = SAIL[currentRegion] || SAIL[0];
+    if (x < x0 || x > x1 || z < z0 || z > z1) return false;
     for (const [dx, dz] of [[0, 0], [1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6]]) if (landHeight(x + dx, z + dz) > -0.2) return false;
     return true;
   }
   function placeOnWater(s) {
+    const [x0, x1, z0, z1] = SAIL[currentRegion] || SAIL[0];
     for (let k = 0; k < 400; k++) {
-      const x = (Math.random() - 0.5) * 100,
-        z = -14 - Math.random() * 48;
+      const x = x0 + Math.random() * (x1 - x0),
+        z = z0 + Math.random() * (z1 - z0);
       if (sailable(x, z)) {
         s.x = x;
         s.z = z;
@@ -572,6 +626,15 @@ export function createEnvironment(parent, state, water) {
         return;
       }
     }
+  }
+  function moor(s, slot) {
+    const [x, z] = MOORINGS[currentRegion][slot];
+    if (sailable(x, z)) {
+      s.x = x;
+      s.z = z;
+    } else placeOnWater(s);
+    s.heading = slot * 2.1 + currentRegion;
+    s.speed = 0;
   }
   const fleetMotion = [],
     anchoredMotion = createHullMotion();
@@ -622,6 +685,7 @@ export function createEnvironment(parent, state, water) {
     // the instances is an even scatter.
     setDetail(quality) {
       grass.count = {battery: 900, balanced: 1800, crisp: 2600, ultra: GRASS_MAX}[quality] || 1800;
+      land.setDetail(quality);
     },
     update(dt, t, region, c) {
       updateSway(t, c.weather === 'wind');
@@ -650,40 +714,61 @@ export function createEnvironment(parent, state, water) {
       island.visible = region === 3 || region === 4;
       reef.visible = region === 4;
       glowMat.emissiveIntensity = c.phase === 'night' ? 1.4 : c.phase === 'dusk' ? 0.8 : 0.1;
-      for (let i = 0; i < cars.length; i++) {
-        const phase = (t * 0.55 + i * 7) % 28;
-        const carX = i % 2 ? 39 - phase : 11 + phase,
-          carZ = -21 + (i % 2 ? 0.45 : -0.45);
-        cars[i].position.set(carX, ground(carX, carZ) + 0.02, carZ);
-        cars[i].rotation.y = i % 2 ? Math.PI : 0;
-        for (const w of cars[i].userData.wheels) w.rotation.z = -t * 0.55 * 7.7;
+      const lamps = c.phase === 'night' ? 1 : c.phase === 'dusk' ? 0.55 : c.weather === 'rain' || c.weather === 'mist' ? 0.3 : 0.02;
+      for (const car of cars) {
+        car.userData.lights[0].emissiveIntensity = 0.1 + lamps * 3;
+        car.userData.lights[1].emissiveIntensity = 0.15 + lamps * 2.2;
+      }
+      // Traffic: cars keep to their lane, follow the road's curves and slopes, and wrap round
+      // out of sight at the far ends.
+      const fwd = new T.Vector3(),
+        back = new T.Vector3();
+      for (const c of cars) {
+        const d = c.userData;
+        d.u = (d.u + (d.dir * d.speed * dt) / roadLength + 1) % 1;
+        const lane = d.dir > 0 ? 2.2 : -2.2,
+          q = sideOf(d.u, lane),
+          tan = roadCurve.getTangentAt(d.u).multiplyScalar(d.dir);
+        sideOf(Math.min(1, Math.max(0, d.u + (d.dir * 1.9) / roadLength)), lane, fwd);
+        sideOf(Math.min(1, Math.max(0, d.u - (d.dir * 1.9) / roadLength)), lane, back);
+        const y = (ground(fwd.x, fwd.z) + ground(back.x, back.z)) / 2 + 0.07,
+          pitch = Math.atan2(ground(fwd.x, fwd.z) - ground(back.x, back.z), 3.8);
+        c.position.set(q.x, y, q.z);
+        c.rotation.set(0, Math.atan2(-tan.z, tan.x), pitch);
+        c.visible = d.u > 0.01 && d.u < 0.99;
+        for (const w of d.wheels) w.rotation.z = -t * d.speed * 2.1;
       }
       for (let i = 0; i < walkers.length; i++) {
-        const px = 13 + ((t * 0.15 + i * 2.3) % 27),
-          pz = -19.3 + (i % 3) * 0.25;
         const w = walkers[i],
-          stride = Math.sin(t * 4.2 * w.userData.pace + i);
-        w.position.set(px, ground(px, pz) + 0.02 + Math.abs(stride) * 0.02, pz);
-        w.rotation.y = Math.PI / 2;
-        w.userData.legs[0].rotation.x = stride * 0.45;
-        w.userData.legs[1].rotation.x = -stride * 0.45;
-        w.userData.arms[0].rotation.x = -stride * 0.35;
-        w.userData.arms[1].rotation.x = stride * 0.35;
+          d = w.userData;
+        d.u = (d.u + (d.dir * 1.9 * d.pace * dt) / roadLength + 1) % 1;
+        const q = sideOf(d.u, -ROAD_W / 2 - 2 - (i % 2) * 0.7),
+          tan = roadCurve.getTangentAt(d.u).multiplyScalar(d.dir),
+          stride = Math.sin(t * 4.2 * d.pace + i);
+        w.position.set(q.x, ground(q.x, q.z) + 0.02 + Math.abs(stride) * 0.04, q.z);
+        w.rotation.y = Math.atan2(tan.x, tan.z);
+        d.legs[0].rotation.x = stride * 0.45;
+        d.legs[1].rotation.x = -stride * 0.45;
+        d.arms[0].rotation.x = -stride * 0.35;
+        d.arms[1].rotation.x = stride * 0.35;
       }
       // Distant boats steer around the shore instead of sailing through it.
       if (fleetRegion !== region) {
         fleetRegion = region;
-        for (const s of sailors) if (!sailable(s.x, s.z)) placeOnWater(s);
+        land.setRegion(region);
+        sailors.forEach((s, i) => (s.moored ? moor(s, i - 2) : !sailable(s.x, s.z) && placeOnWater(s)));
       }
       for (let i = 0; i < fleet.length; i++) {
         const b = fleet[i],
-          s = steerBoat(sailors[i], dt, sailable, t),
+          s = sailors[i].moored ? sailors[i] : steerBoat(sailors[i], dt, sailable, t),
           pose = orientedPose(water.height, s.x, s.z, t, s.heading, 4.1 * s.size, 1.8 * s.size);
         fleetMotion[i] ??= createHullMotion({heave: 2.6, pitch: 3, roll: 2.4});
         const m = fleetMotion[i].step(dt, hullTarget(pose, 0, 0));
         b.position.set(s.x, m.y, s.z);
         b.rotation.order = 'YXZ';
-        b.rotation.set(m.rx, -s.heading, m.rz + Math.min(0.12, Math.abs(s.turnLeft) * 0.05) * Math.sign(s.turnLeft));
+        // Boats at anchor swing slowly round their mooring with the wind.
+        const swing = s.moored ? Math.sin(t * 0.05 + i * 2) * 0.35 : 0;
+        b.rotation.set(m.rx, -s.heading + swing, m.rz + Math.min(0.12, Math.abs(s.turnLeft) * 0.05) * Math.sign(s.turnLeft));
       }
       if (boatTier !== state.boat) {
         salt.remove(anchored);
@@ -742,6 +827,7 @@ export function createEnvironment(parent, state, water) {
       return sailors;
     },
     landHeight,
+    groundAt: (x, z) => landHeight(x, z),
     get anchored() {
       return anchored;
     },

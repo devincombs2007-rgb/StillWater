@@ -208,63 +208,121 @@ export function cottage(seed = 1, glow = null) {
 // --- Cars ----------------------------------------------------------------------------
 // Rounded little hatchback: bevelled body, glasshouse, bumpers, lights, wheels with hubs.
 export function car(seed = 1) {
-  const paintC = ['#a4b8b0', '#bca187', '#788c9d', '#c8c1ad', '#b07b6e'][seed % 5],
+  // A real-scale hatchback/estate (about 4.5 m: 6.2 units, the angler is 2.45): side
+  // profile with wheel arches extruded across the width with rounded edges, glasshouse and
+  // pillars, bumpers, grille, lights that glow at night, mirrors, door seams and spoked
+  // wheels, plus a soft contact shadow so it sits on the road.
+  const paintC = ['#9fb3ab', '#b89a7f', '#6f8598', '#c9c2ad', '#a8675e', '#4f5f58'][seed % 6],
     group = new T.Group(),
-    shape = new T.Shape(),
-    L = 1.5,
-    H = 0.42;
-  const rr = 0.12;
-  shape.moveTo(-L / 2 + rr, 0);
-  shape.lineTo(L / 2 - rr, 0);
-  shape.quadraticCurveTo(L / 2, 0, L / 2, rr);
-  shape.lineTo(L / 2, H - rr);
-  shape.quadraticCurveTo(L / 2, H, L / 2 - rr, H);
-  shape.lineTo(-L / 2 + rr, H);
-  shape.quadraticCurveTo(-L / 2, H, -L / 2, H - rr);
-  shape.lineTo(-L / 2, rr);
-  shape.quadraticCurveTo(-L / 2, 0, -L / 2 + rr, 0);
-  const body = new T.ExtrudeGeometry(shape, {depth: 0.66, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.05, bevelSegments: 3, curveSegments: 6});
-  body.translate(0, 0.2, -0.33);
-  const cabin = new T.Shape();
-  cabin.moveTo(-0.55, 0);
-  cabin.lineTo(0.35, 0);
-  cabin.quadraticCurveTo(0.3, 0.32, 0.12, 0.36);
-  cabin.lineTo(-0.45, 0.36);
-  cabin.quadraticCurveTo(-0.56, 0.33, -0.55, 0);
-  const cab = new T.ExtrudeGeometry(cabin, {depth: 0.58, bevelEnabled: true, bevelSize: 0.03, bevelThickness: 0.03, bevelSegments: 2});
-  cab.translate(0, 0.62, -0.29);
-  const glass = new T.ExtrudeGeometry(cabin, {depth: 0.6, bevelEnabled: false});
-  glass.scale(0.92, 0.82, 1);
-  glass.translate(-0.01, 0.67, -0.3);
-  const parts = [
-    {geo: body, color: paintC},
-    {geo: cab, color: C(paintC).multiplyScalar(0.95)},
-    {geo: place(new T.BoxGeometry(0.06, 0.12, 0.72), [L / 2 + 0.06, 0.27, 0]), color: '#4a4f4c'},
-    {geo: place(new T.BoxGeometry(0.06, 0.12, 0.72), [-L / 2 - 0.06, 0.27, 0]), color: '#4a4f4c'},
-  ];
-  for (const z of [-0.24, 0.24]) {
-    parts.push({geo: place(new T.CylinderGeometry(0.055, 0.055, 0.03, 10), [L / 2 + 0.04, 0.47, z], [0, 0, Math.PI / 2]), color: '#fff3cf'});
-    parts.push({geo: place(new T.BoxGeometry(0.03, 0.07, 0.12), [-L / 2 - 0.04, 0.47, z]), color: '#c4463c'});
+    W = 2.1,
+    arch = 0.58,
+    wheelX = 1.9,
+    s = new T.Shape();
+  s.moveTo(-3.1, 0.38);
+  s.lineTo(-wheelX - arch, 0.38);
+  s.absarc(-wheelX, 0.38, arch, Math.PI, 0, true);
+  s.lineTo(wheelX - arch, 0.38);
+  s.absarc(wheelX, 0.38, arch, Math.PI, 0, true);
+  s.lineTo(3.08, 0.38);
+  s.quadraticCurveTo(3.2, 0.42, 3.18, 0.8);
+  s.quadraticCurveTo(3.12, 1.08, 2.7, 1.14);
+  s.lineTo(1.75, 1.22);
+  s.quadraticCurveTo(1.05, 1.62, 0.7, 1.96);
+  s.quadraticCurveTo(0.55, 2.04, 0.2, 2.04);
+  s.lineTo(-1.6, 2.02);
+  s.quadraticCurveTo(-2.05, 1.98, -2.45, 1.55);
+  s.lineTo(-2.95, 1.25);
+  s.quadraticCurveTo(-3.18, 1.15, -3.16, 0.85);
+  s.quadraticCurveTo(-3.18, 0.42, -3.1, 0.38);
+  const body = new T.ExtrudeGeometry(s, {depth: W, bevelEnabled: true, bevelSize: 0.14, bevelThickness: 0.16, bevelSegments: 4, curveSegments: 10});
+  body.translate(0, 0, -W / 2);
+  const paintCol = C(paintC),
+    glass = C('#1e2c33'),
+    trim = C('#2b2f30');
+  // Glasshouse: tinted between the waist line and the roof, except the pillars.
+  paint(body, (x, y, z, out) => {
+    // Windscreen and tailgate glass (the side windows are separate panels below).
+    if (y > 1.25 && y < 1.95 && (x > 1.0 || x < -1.9) && Math.abs(z) < W / 2 + 0.05) out.copy(glass);
+    else if (y < 0.62) out.copy(paintCol).multiplyScalar(0.55);
+    else out.copy(paintCol);
+  });
+  const parts = [body];
+  const box = (w, h, d, p, c) => parts.push(paint(place(new T.BoxGeometry(w, h, d), p), c));
+  box(0.22, 0.32, W + 0.34, [3.28, 0.55, 0], '#3a3e3e'); // front bumper
+  box(0.22, 0.32, W + 0.34, [-3.28, 0.55, 0], '#3a3e3e'); // rear bumper
+  box(0.06, 0.26, 1.1, [3.33, 0.86, 0], trim); // grille
+  for (const side of [-1, 1]) {
+    box(0.035, 0.75, 0.03, [0.05, 0.85, side * (W / 2 + 0.165)], trim); // door seams
+    box(0.035, 0.75, 0.03, [-1.15, 0.85, side * (W / 2 + 0.165)], trim);
+    box(0.18, 0.04, 0.03, [-0.35, 1.0, side * (W / 2 + 0.17)], '#9aa09c'); // handles
+    box(0.22, 0.16, 0.18, [1.3, 1.36, side * (W / 2 + 0.24)], paintC); // mirrors
   }
-  group.add(new T.Mesh(merge(parts), vcMaterial('car', {roughness: 0.38, metalness: 0.25})));
-  group.add(new T.Mesh(glass, new T.MeshStandardMaterial({color: '#2b3f48', roughness: 0.1, metalness: 0.6})));
-  const tyre = new T.TorusGeometry(0.13, 0.065, 8, 18),
-    hub = new T.CylinderGeometry(0.09, 0.09, 0.05, 12);
+  group.add(new T.Mesh(merge(parts), vcMaterial('car', {roughness: 0.32, metalness: 0.35})));
+  // Side windows: front and rear panes either side of the B-pillar, flush with the body.
+  const pane = pts => {
+    const sh = new T.Shape(pts.map(([x, y]) => new T.Vector2(x, y)));
+    return new T.ShapeGeometry(sh);
+  };
+  const glassMat = new T.MeshStandardMaterial({color: '#203039', metalness: 0.7, roughness: 0.08});
+  for (const side of [-1, 1])
+    for (const pts of [
+      [[1.6, 1.3], [0.68, 1.9], [-0.42, 1.9], [-0.42, 1.3]],
+      [[-0.62, 1.3], [-0.62, 1.9], [-1.55, 1.9], [-2.3, 1.36]],
+    ]) {
+      const g = pane(pts);
+      if (side < 0) g.rotateY(Math.PI);
+      g.translate(0, 0, side * (W / 2 + 0.162));
+      group.add(new T.Mesh(g, glassMat));
+    }
+  // Lights in their own material so they can glow after dark.
+  const head = new T.MeshStandardMaterial({color: '#f4ecd2', emissive: '#ffe7b0', emissiveIntensity: 0.1, roughness: 0.2}),
+    tail = new T.MeshStandardMaterial({color: '#8c2a24', emissive: '#ff3a2a', emissiveIntensity: 0.15, roughness: 0.3});
+  for (const side of [-1, 1]) {
+    group.add(new T.Mesh(place(new T.BoxGeometry(0.1, 0.18, 0.42), [3.31, 0.95, side * 0.72]), head));
+    group.add(new T.Mesh(place(new T.BoxGeometry(0.1, 0.2, 0.36), [-3.32, 1.02, side * 0.78]), tail));
+  }
+  group.userData.lights = [head, tail];
+  // Wheels: tyre, rim and five spokes; they turn as the car drives.
+  const wheelParts = [paint(new T.TorusGeometry(0.33, 0.15, 10, 24), '#1f2221'), paint(place(new T.CylinderGeometry(0.27, 0.27, 0.12, 18), [0, 0, 0], [Math.PI / 2, 0, 0]), '#9ea4a0')];
+  for (let k = 0; k < 5; k++) wheelParts.push(paint(place(new T.BoxGeometry(0.06, 0.4, 0.04), [0, 0, 0.07], [0, 0, (k / 5) * Math.PI * 2]), '#c9cdc8'));
+  const wheelGeo = merge(wheelParts);
   const wheels = [];
-  for (const x of [-0.48, 0.48])
-    for (const z of [-0.37, 0.37]) {
+  for (const x of [-wheelX, wheelX])
+    for (const z of [-1, 1]) {
       const w = new T.Group();
-      w.position.set(x, 0.19, z);
-      w.add(new T.Mesh(tyre, vcMaterial('tyre')));
-      const h = new T.Mesh(hub, new T.MeshStandardMaterial({color: '#c7cbc4', metalness: 0.7, roughness: 0.3}));
-      h.rotation.x = Math.PI / 2;
-      w.add(h);
+      w.position.set(x, 0.48, z * (W / 2 + 0.02));
+      const m = new T.Mesh(wheelGeo, vcMaterial('tyre', {roughness: 0.6, metalness: 0.2}));
+      if (z < 0) m.rotation.y = Math.PI;
+      w.add(m);
       group.add(w);
       wheels.push(w);
     }
-  paint(tyre, '#2a2e2c');
   group.userData.wheels = wheels;
+  // Contact shadow: a soft dark patch under the body grounds the car on any road.
+  const shadow = new T.Mesh(new T.PlaneGeometry(7.2, 3.1), new T.MeshBasicMaterial({map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.55, color: '#000000'}));
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = 0.03;
+  shadow.renderOrder = -1;
+  group.add(shadow);
   return group;
+}
+// Soft elliptical shadow texture shared by grounded props.
+let blob = null;
+export function blobTexture() {
+  if (blob) return blob;
+  const n = 64,
+    data = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const dx = (x + 0.5) / n - 0.5,
+        dy = (y + 0.5) / n - 0.5,
+        d = Math.min(1, Math.hypot(dx, dy) * 2),
+        a = Math.pow(1 - d, 1.6);
+      data.set([255, 255, 255, Math.round(a * 255)], (y * n + x) * 4);
+    }
+  blob = new T.DataTexture(data, n, n, T.RGBAFormat);
+  blob.needsUpdate = true;
+  return blob;
 }
 
 // --- People --------------------------------------------------------------------------
