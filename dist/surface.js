@@ -108,3 +108,60 @@ export function hullTarget(pose, draft, yaw = 0) {
   const flip = Math.cos(yaw) < 0 ? -1 : 1;
   return {y: pose.y + draft, rx: -pose.pitch, rz: pose.roll * flip};
 }
+// Water pose sampled along a boat's own axes (bow along heading), for rotation order 'YXZ'
+// with rotation.y = -heading. pitch is the across-beam slope, roll the fore-aft slope.
+export function orientedPose(waterHeight, x, z, time, heading, length = 5, width = 2) {
+  const fx = Math.cos(heading),
+    fz = Math.sin(heading),
+    sx = -fz,
+    sz = fx;
+  const h = waterHeight(x, z, time),
+    fore = waterHeight(x + (fx * length) / 2, z + (fz * length) / 2, time),
+    aft = waterHeight(x - (fx * length) / 2, z - (fz * length) / 2, time),
+    starboard = waterHeight(x + (sx * width) / 2, z + (sz * width) / 2, time),
+    port = waterHeight(x - (sx * width) / 2, z - (sz * width) / 2, time);
+  return {y: h, pitch: Math.atan2(starboard - port, width), roll: Math.atan2(fore - aft, length)};
+}
+// Steering for boats that must stay on open water. Each step looks ahead along the
+// heading; when land (or the edge of the sailing area) is ahead, the boat picks the
+// smallest turn that opens clear water, slows while turning, and if it ever touches
+// shore it backs off instead of passing through.
+export function steerBoat(s, dt, isWater, time = 0) {
+  dt = Math.min(0.1, Math.max(0, dt));
+  const look = 3 + s.size * 4,
+    clear = h => isWater(s.x + Math.cos(h) * look, s.z + Math.sin(h) * look) && isWater(s.x + Math.cos(h) * look * 0.5, s.z + Math.sin(h) * look * 0.5);
+  if (Math.abs(s.turnLeft || 0) < 1e-3 && !clear(s.heading)) {
+    s.turnLeft = Math.PI;
+    for (const k of [0.35, 0.7, 1.05, 1.4, 1.75, 2.1, 2.45, 2.8]) {
+      const side = Math.sin(time * 0.3 + s.seed) > 0 ? 1 : -1;
+      if (clear(s.heading + k * side)) {
+        s.turnLeft = k * side;
+        break;
+      }
+      if (clear(s.heading - k * side)) {
+        s.turnLeft = -k * side;
+        break;
+      }
+    }
+  }
+  const rate = 0.45,
+    step = Math.sign(s.turnLeft || 0) * Math.min(Math.abs(s.turnLeft || 0), rate * dt);
+  s.heading += step;
+  s.turnLeft = (s.turnLeft || 0) - step;
+  if (Math.abs(s.turnLeft) < 1e-3) s.heading += Math.sin(time * 0.07 + s.seed) * 0.03 * dt;
+  const target = Math.abs(s.turnLeft) > 0.05 ? s.cruise * 0.45 : s.cruise;
+  s.speed += (target - s.speed) * Math.min(1, dt * 0.8);
+  const nx = s.x + Math.cos(s.heading) * s.speed * dt,
+    nz = s.z + Math.sin(s.heading) * s.speed * dt;
+  if (isWater(nx, nz)) {
+    s.x = nx;
+    s.z = nz;
+  } else {
+    // Bumped the shore: push back out the way it came and lose way.
+    s.x -= Math.cos(s.heading) * s.speed * dt * 0.6;
+    s.z -= Math.sin(s.heading) * s.speed * dt * 0.6;
+    s.speed *= 0.5;
+    if (Math.abs(s.turnLeft) < 1e-3) s.turnLeft = Math.PI * 0.8;
+  }
+  return s;
+}

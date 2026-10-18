@@ -15,3 +15,10 @@ const slope=(x,z)=>x*.05+z*.1,pose=buoyancyPose(slope,0,0,0,5,2),hull=createHull
 const o=new T3.Object3D();o.rotation.set(m.rx,0,m.rz);o.updateMatrixWorld(true);const star=new T3.Vector3(0,0,1).applyMatrix4(o.matrixWorld),bow=new T3.Vector3(1,0,0).applyMatrix4(o.matrixWorld);
 assert.ok(star.y>0&&bow.y>0,'hull leans with the water slope');assert.ok(Math.abs(m.y-.3)<.01,'hull settles at its draft');assert.ok(peak>.3,'hull has inertia and overshoots slightly');
 console.log('PASS: damped hull dynamics follow the water slope with inertia.');}
+{const T3=await import('../dist/assets/three.module.js');const {createWater,createEnvironment}=await import('../dist/environment.js');const {freshState}=await import('../dist/economy.js');
+// Distant boats must never sail through banks, islands, quays or the mountain foot.
+const parent=new T3.Group(),w=createWater(parent),env=createEnvironment(parent,freshState(),w),c={weather:'clear',phase:'day',cycle:.3,swell:1};
+for(let region=0;region<6;region++){let t=0;w.update(t,region,c);env.update(.1,t,region,c);const start=env.sailors.map(s=>({x:s.x,z:s.z})),travel=env.sailors.map(()=>0);
+for(let k=0;k<6000;k++){t+=.2;const before=env.sailors.map(s=>({x:s.x,z:s.z}));env.update(.2,t,region,c);env.sailors.forEach((s,i)=>{travel[i]+=Math.hypot(s.x-before[i].x,s.z-before[i].z);assert.ok(env.landHeight(s.x,s.z)<-0.2,`region ${region}: boat ${i} ran aground at ${s.x.toFixed(1)},${s.z.toFixed(1)}`);});}
+for(const d of travel)assert.ok(d>150,`region ${region}: boats keep sailing (${d.toFixed(0)} m)`);void start;}
+console.log('PASS: distant boats stay on open water in all six regions over 20 simulated minutes and keep moving.');}

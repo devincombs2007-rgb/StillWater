@@ -1,6 +1,6 @@
 import * as T from './assets/three.module.js';
 import {surfaceTexture} from './textures.js?v=7';
-import {buoyancyPose, createHullMotion, hullTarget} from './surface.js?v=7';
+import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=7';
 import {BOATS} from './economy.js?v=7';
 import {
   broadleafGeometry,
@@ -382,6 +382,11 @@ export function createEnvironment(parent, state, water) {
     p.rotation.y = i * 1.3;
     island.add(p);
   }
+  // A stone quay the waterfront stands on (the buildings used to stand on open water).
+  const quay = mesh(box, mat('#8d8a7d', {roughness: 0.95}), [-13.5, 0.4, -83], [50, 1.6, 15], harbor);
+  quay.receiveShadow = true;
+  mesh(box, mat('#6f6d63', {roughness: 0.95}), [-13.5, 1.22, -75.6], [50, 0.12, 0.5], harbor);
+  for (let k = 0; k < 12; k++) mesh(cyl, mat('#4c4a43'), [-37 + k * 4.3, 0.3, -75.3], [0.18, 1.4, 0.18], harbor);
   for (let i = 0; i < 14; i++) {
     const b = harborBuilding(i + 1, glowMat);
     b.position.set(-35 + i * 3.3, 1, -79 - (i % 3) * 3);
@@ -464,7 +469,8 @@ export function createEnvironment(parent, state, water) {
     g.scale.setScalar(size);
     return g;
   }
-  const fleet = [];
+  const fleet = [],
+    sailors = [];
   for (let i = 0; i < 5; i++) {
     const b = boat(0.5 + i * 0.1, i % 2);
     common.add(b);
@@ -489,6 +495,49 @@ export function createEnvironment(parent, state, water) {
       mesh(sail([[-0.06, 2.6], [-0.06, 0.7], [-1.2, 0.7]], 0.18), mat('#e3dcc6', {side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], b);
     }
     fleet.push(b);
+    const sailor = {x: 0, z: -30 - i * 6, heading: Math.random() * Math.PI * 2, speed: 0.8, cruise: 0.7 + i * 0.12, size: 0.5 + i * 0.1, seed: i * 1.7, turnLeft: 0};
+    sailors.push(sailor);
+  }
+  // Land under a point for the current region (water level is 0). Rectangles match the
+  // terrain() banks and islands above, so boats see the same shore the player sees.
+  const rect = (x, z, cx, cz, w, d, h) => {
+    if (Math.abs(z - cz) > d / 2) return -1;
+    const xx = x - cx,
+      zz = z - cz,
+      edge = Math.max(0, 1 - Math.pow(Math.abs(xx) / (w * 0.5), 2));
+    return edge > 0 ? -0.25 + Math.pow(edge, 0.7) * (h + Math.sin(xx * 0.25 + zz * 0.18) * h * 0.22 + Math.sin(zz * 0.47) * 0.2) : -1;
+  };
+  let currentRegion = state.region || 0,
+    fleetRegion = -1;
+  function landHeight(x, z) {
+    const r = currentRegion;
+    if (r >= 3) {
+      let h = -1;
+      if (r <= 4) h = Math.max(h, rect(x, z, -42, -63, 46, 42, 4));
+      if (r === 3) h = Math.max(h, rect(x, z, 44, -89, 45, 35, 5), Math.abs(x + 13.5) < 25 && Math.abs(z + 83) < 7.5 ? 1 : -1);
+      return h;
+    }
+    // Freshwater: the two banks, the meadow behind the dock, and the mountain foot far out.
+    if (z < -60) return 1;
+    return Math.max(rect(x, z, -23, -7, 27, 68, 3.4), rect(x, z, 27, -16, 32, 75, 4.5), rect(x, z, 0, 35, 80, 35, 3));
+  }
+  // Open water with a hull-sized margin, inside the distant sailing area.
+  function sailable(x, z) {
+    if (Math.abs(x) > 60 || z > -12 || z < -64) return false;
+    for (const [dx, dz] of [[0, 0], [1.6, 0], [-1.6, 0], [0, 1.6], [0, -1.6]]) if (landHeight(x + dx, z + dz) > -0.2) return false;
+    return true;
+  }
+  function placeOnWater(s) {
+    for (let k = 0; k < 400; k++) {
+      const x = (Math.random() - 0.5) * 100,
+        z = -14 - Math.random() * 48;
+      if (sailable(x, z)) {
+        s.x = x;
+        s.z = z;
+        s.turnLeft = 0;
+        return;
+      }
+    }
   }
   const fleetMotion = [],
     anchoredMotion = createHullMotion();
@@ -537,6 +586,7 @@ export function createEnvironment(parent, state, water) {
   return {
     update(dt, t, region, c) {
       updateSway(t, c.weather === 'wind');
+      currentRegion = region;
       const ocean = region >= 3;
       fresh.visible = !ocean;
       salt.visible = ocean;
@@ -581,20 +631,20 @@ export function createEnvironment(parent, state, water) {
         w.userData.arms[0].rotation.x = -stride * 0.35;
         w.userData.arms[1].rotation.x = stride * 0.35;
       }
+      // Distant boats steer around the shore instead of sailing through it.
+      if (fleetRegion !== region) {
+        fleetRegion = region;
+        for (const s of sailors) if (!sailable(s.x, s.z)) placeOnWater(s);
+      }
       for (let i = 0; i < fleet.length; i++) {
-        const b = fleet[i];
-        const bx = Math.sin(t * 0.015 + i * 1.7) * 42,
-          bz = -35 - i * 8;
-        const pose = buoyancyPose(water.height, bx, bz, t, 3, 1.2),
-          yaw = Math.cos(t * 0.015 + i * 1.7) > 0 ? 0 : Math.PI;
+        const b = fleet[i],
+          s = steerBoat(sailors[i], dt, sailable, t),
+          pose = orientedPose(water.height, s.x, s.z, t, s.heading, 4.1 * s.size, 1.8 * s.size);
         fleetMotion[i] ??= createHullMotion({heave: 2.6, pitch: 3, roll: 2.4});
-        b.position.set(bx, pose.y, bz);
-        const m = fleetMotion[i].step(dt, hullTarget(pose, 0, yaw));
-        b.position.y = m.y;
-        b.rotation.y = yaw;
-        b.rotation.x = m.rx;
-        b.rotation.z = m.rz;
-        b.visible = i < 3 || Math.sin(t * 0.02 + i) > 0.3;
+        const m = fleetMotion[i].step(dt, hullTarget(pose, 0, 0));
+        b.position.set(s.x, m.y, s.z);
+        b.rotation.order = 'YXZ';
+        b.rotation.set(m.rx, -s.heading, m.rz + Math.min(0.12, Math.abs(s.turnLeft) * 0.05) * Math.sign(s.turnLeft));
       }
       if (boatTier !== state.boat) {
         salt.remove(anchored);
@@ -646,6 +696,11 @@ export function createEnvironment(parent, state, water) {
       anchoredMotion.kick('rx', -amount);
       anchoredMotion.kick('y', -amount * 0.4);
     },
+    // Exposed for tests: distant boats' steering state and the region's land map.
+    get sailors() {
+      return sailors;
+    },
+    landHeight,
     get anchored() {
       return anchored;
     },
