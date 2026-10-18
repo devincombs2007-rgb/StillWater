@@ -26,7 +26,12 @@
 // Colour flows through in display space: the internal target is flagged so three applies
 // the same ACES tone mapping and sRGB encoding as the screen. Every material, including the
 // hand-written sky shaders, therefore looks identical with the upscaler on or off.
-import * as T from './assets/three.module.js';
+//
+// Drop-in use (no imports, so it works with any copy of three r150+):
+//   const upscaler = createUpscaler(renderer, THREE);
+//   each frame, instead of rendering straight to the screen:
+//   upscaler.render(() => { renderer.clear(); renderer.render(scene, camera); }, camera,
+//     {mode: 'quality', sharpness: 'standard', fps: 60, scenes: [scene]});
 
 // Internal render scale per mode, matching the published FSR / DLSS ratios. Auto starts at
 // Quality and adapts.
@@ -100,10 +105,22 @@ uniform vec2 inRes;
 uniform vec2 outRes;
 uniform vec2 jitter;
 uniform mat4 reproj;
+uniform vec4 invViewProjW;
+uniform float debugMotion;
 uniform float reset;
 uniform float havePrevDepth;
 uniform float maxConf;
+uniform float maxConfStill;
+uniform float gammaStill;
+uniform float gammaMove;
+uniform float stillSpeed;
+uniform float pullPenalty;
+uniform float depthTrust;
+uniform float speedPenalty;
 uniform float kernelScale;
+uniform float ratio;
+uniform float accumMode;
+uniform float accumK;
 uniform vec2 clipRange;
 varying vec2 vUv;
 
@@ -167,6 +184,8 @@ void main() {
 
   vec3 sum = vec3(0.0);
   float wsum = 0.0, peak = 0.0;
+  vec3 accSum = vec3(0.0);
+  float accW = 0.0;
   vec3 m1 = vec3(0.0), m2 = vec3(0.0);
   vec3 lo = vec3(1e5), hi = vec3(-1e5);
   vec3 rgbLo = vec3(1e5), rgbHi = vec3(-1e5);
@@ -188,6 +207,13 @@ void main() {
       sum += c * w;
       wsum += w;
       float g = exp(-2.29 * d2);
+      // Sample accumulation: each real sample weighted by its distance to this output pixel's
+      // centre, in output pixels. Over the jitter sequence the history becomes the weighted
+      // average of every sample that fell near the pixel: true supersampling, not a blur.
+      vec2 dOut = (t - pos) * ratio;
+      float wa = exp(-accumK * dot(dOut, dOut));
+      accSum += c * wa;
+      accW += wa;
       peak = max(peak, g);
       if (g > nearestW) {
         nearestW = g;
@@ -208,6 +234,11 @@ void main() {
   }
   // Lanczos' negative lobes sharpen; clamping to the neighbourhood stops them ringing.
   vec3 current = wsum > 0.05 ? clamp(sum / wsum, rgbLo, rgbHi) : nearestColour;
+  float coverage = peak;
+  if (accumMode > 0.5) {
+    current = accW > 1e-4 ? accSum / accW : nearestColour;
+    coverage = accW;
+  }
 
   // Motion, taken at the nearest neighbour so silhouettes carry the motion of the
   // foreground object rather than the background behind it.
@@ -218,12 +249,19 @@ void main() {
   vec2 motion;
   float expectedPrev;
   bool behindCamera = false;
-  if (vel.a > 0.0 && abs(vel.b - dist) < 0.03 * dist + 0.03) {
+  bool objectMotion = false;
+  // The velocity pass is not hidden by static geometry, so the depth it wrote must match the
+  // frame's depth closely, or a static object just in front of a moving one would take its motion.
+  if (vel.a > 0.0 && abs(vel.b - dist) < 0.004 * dist + 0.01) {
     // This pixel belongs to an object that moved on its own: use its true motion.
     motion = vel.rg;
     expectedPrev = vel.a;
+    objectMotion = true;
   } else {
-    vec4 prevClip = reproj * vec4(s * 2.0 - 1.0, nearest * 2.0 - 1.0, 1.0);
+    vec4 ndc = vec4(s * 2.0 - 1.0, nearest * 2.0 - 1.0, 1.0);
+    // reproj = prevViewProj * inverse(viewProj); dividing by the unprojected point's w gives
+    // last frame's true clip w, i.e. the distance the surface should have had then.
+    vec4 prevClip = reproj * ndc / dot(invViewProjW, ndc);
     behindCamera = prevClip.w <= 0.0;
     motion = prevClip.xy / prevClip.w * 0.5 + 0.5 - s;
     expectedPrev = prevClip.w;
@@ -234,42 +272,61 @@ void main() {
   // Disocclusion: if last frame had something clearly nearer at the spot this surface came
   // from, this surface was hidden then and its history belongs to something else. The
   // farthest of four taps is used so sub-pixel jitter at silhouettes is not mistaken for it.
+  // The same taps also say how far history can be trusted: when last frame's surface at the
+  // reprojected spot sits at exactly the expected distance, the history is this surface, even
+  // while the camera moves, and can keep a wide clip box.
   bool disoccluded = false;
+  float trust = 0.0;
   if (havePrevDepth > 0.5 && !offscreen && !behindCamera) {
     vec2 h = 0.5 * texel;
-    float far = max(
-      max(viewDistance(texture2D(tPrevDepth, prevUv + vec2(-h.x, -h.y)).r), viewDistance(texture2D(tPrevDepth, prevUv + vec2(h.x, -h.y)).r)),
-      max(viewDistance(texture2D(tPrevDepth, prevUv + vec2(-h.x, h.y)).r), viewDistance(texture2D(tPrevDepth, prevUv + vec2(h.x, h.y)).r)));
+    float d0 = viewDistance(texture2D(tPrevDepth, prevUv + vec2(-h.x, -h.y)).r);
+    float d1 = viewDistance(texture2D(tPrevDepth, prevUv + vec2(h.x, -h.y)).r);
+    float d2 = viewDistance(texture2D(tPrevDepth, prevUv + vec2(-h.x, h.y)).r);
+    float d3 = viewDistance(texture2D(tPrevDepth, prevUv + vec2(h.x, h.y)).r);
+    float far = max(max(d0, d1), max(d2, d3));
     disoccluded = far < expectedPrev * 0.9 - 0.05;
+    float closest = min(min(abs(d0 - expectedPrev), abs(d1 - expectedPrev)), min(abs(d2 - expectedPrev), abs(d3 - expectedPrev)));
+    trust = 1.0 - smoothstep(0.004, 0.03, closest / expectedPrev);
+    // Only where nothing nearby moves on its own: next to a moving object the history can be
+    // geometrically right and still carry that object's old colours.
+    if (vel.a > 0.0 || texture2D(tVelocity, (base + 0.5) * texel).a > 0.0) trust = 0.0;
   }
 
   vec4 hist = historyCatmullRom(prevUv);
   float conf = (reset > 0.5 || offscreen || behindCamera || disoccluded) ? 0.0 : hist.a;
 
-  // Variance clipping box, tighter when the image is moving fast.
+  // Variance clipping box. Where the pixel is still (or tracked by its own motion vector and
+  // barely moving) the box is wide and unbounded by the neighbourhood's min/max, so sub-pixel
+  // detail such as wires, seen by only some jittered frames, survives and accumulates. Moving
+  // pixels get a tight box clamped to the neighbourhood, which is what stops ghosting.
   float speed = length(motion * outRes);
+  float still = max(1.0 - clamp(speed / stillSpeed, 0.0, 1.0), trust * depthTrust);
   vec3 mean = m1 / 9.0;
   vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, 0.0));
-  float gamma = mix(1.25, 0.85, clamp(speed / 12.0, 0.0, 1.0));
-  vec3 boxLo = max(lo, mean - gamma * sigma);
-  vec3 boxHi = min(hi, mean + gamma * sigma);
+  float gamma = mix(gammaMove, gammaStill, still);
+  vec3 boxLo = mean - gamma * sigma;
+  vec3 boxHi = mean + gamma * sigma;
+  boxLo = mix(max(lo, boxLo), boxLo, still);
+  boxHi = mix(min(hi, boxHi), boxHi, still);
   vec3 hy = toYCoCg(hist.rgb);
   vec3 cy = toYCoCg(current);
   vec3 clipped = conf > 0.0 ? clipToBox(hy, boxLo, boxHi) : cy;
   // History that had to be pulled a long way was stale: trust it less from here on.
   float pulled = length(hy - clipped) / max(clipped.x + 0.05, 0.05);
-  conf *= clamp(1.0 - pulled * 1.5, 0.2, 1.0);
-  conf *= 1.0 / (1.0 + speed * 0.03);
+  conf *= clamp(1.0 - pulled * pullPenalty, 0.2, 1.0);
+  // Every resample softens history slightly, so fast-moving pixels keep less of it.
+  conf *= 1.0 / (1.0 + speed * speedPenalty);
 
   // A sample sitting right on this output pixel counts fully; one a texel away counts less.
-  float coverage = peak;
   float total = conf + coverage;
   float alpha = coverage / max(total, 1e-4);
   // Luma-weighted blend: bright single-frame sparkles (sun glints) do not flicker.
   float wh = (1.0 - alpha) / (1.0 + clipped.x);
   float wc = alpha / (1.0 + cy.x);
   vec3 outY = (clipped * wh + cy * wc) / max(wh + wc, 1e-5);
-  gl_FragColor = vec4(max(fromYCoCg(outY), 0.0), min(total, maxConf));
+  gl_FragColor = vec4(max(fromYCoCg(outY), 0.0), min(total, mix(maxConf, maxConfStill, still)));
+  if (debugMotion > 0.0)
+    gl_FragColor.rgb = vec3(clamp(abs(motion * outRes) / 8.0, 0.0, 1.0), objectMotion ? 1.0 : (vel.a > 0.0 ? 0.4 : 0.0));
 }`;
 
 // FSR 1 robust contrast-adaptive sharpening (RCAS), with its noise guard, plus the optional
@@ -282,10 +339,15 @@ uniform vec2 outRes;
 uniform vec2 lowJitter;
 uniform float sharpness;
 uniform float split;
+uniform float debugConf;
 varying vec2 vUv;
 
 void main() {
   vec2 px = 1.0 / outRes;
+  if (debugConf > 0.0) {
+    gl_FragColor = vec4(vec3(texture2D(tSrc, vUv).a / debugConf), 1.0);
+    return;
+  }
   if (vUv.x < split) {
     vec3 low = texture2D(tLow, vUv + lowJitter).rgb;
     float edge = 1.0 - smoothstep(0.0, 1.5 * px.x, abs(vUv.x - split + px.x));
@@ -315,7 +377,45 @@ void main() {
   gl_FragColor = vec4(c, 1.0);
 }`;
 
-function quadPass(fragmentShader, uniforms) {
+// Texture mip bias. Rendering at a lower resolution makes the GPU choose blurrier mip levels,
+// so textures would come out soft even after reconstruction. Like FSR 2 and DLSS, sample
+// material textures with a negative LOD bias matching the render scale; the temporal pass
+// cleans up the extra shimmer. WebGL has no global bias, so each standard material's texture
+// lookups are patched once (wrapping any onBeforeCompile it already has) to read a shared
+// uniform, which then changes live with the mode.
+const BIAS_CHUNKS = ['map_fragment', 'normal_fragment_maps', 'roughnessmap_fragment', 'metalnessmap_fragment', 'emissivemap_fragment', 'specularmap_fragment'];
+// Shared by every upscaler on the page, so a material is only ever patched once; whichever
+// upscaler renders sets the value for its frame.
+const mipBias = {value: 0},
+  patched = new WeakSet();
+function mipBiasPatcher(T) {
+  const bias = mipBias;
+  const lookup = /texture2D\(\s*(\w+)\s*,\s*(v\w+Uv)\s*\)/g;
+  return material => {
+    if (patched.has(material)) return;
+    patched.add(material);
+    if (material.isShaderMaterial || material.isRawShaderMaterial || material.isMeshDepthMaterial || material.isMeshDistanceMaterial) return;
+    const prevCompile = material.onBeforeCompile,
+      prevKey = material.customProgramCacheKey;
+    // Keep programs apart exactly as they were before the patch.
+    const baseKey = prevKey === T.Material.prototype.customProgramCacheKey ? prevCompile.toString() : null;
+    material.onBeforeCompile = function (shader, r) {
+      prevCompile.call(this, shader, r);
+      shader.uniforms.upscaleMipBias = bias;
+      shader.fragmentShader =
+        'uniform float upscaleMipBias;\n' +
+        shader.fragmentShader
+          .replace(/#include <(\w+)>/g, (m, name) => (BIAS_CHUNKS.includes(name) ? T.ShaderChunk[name] : m))
+          .replace(lookup, 'texture2D( $1, $2, upscaleMipBias )');
+    };
+    material.customProgramCacheKey = function () {
+      return (baseKey ?? prevKey.call(this)) + '|upscale-mip-bias';
+    };
+    material.needsUpdate = true;
+  };
+}
+
+function quadPass(T, fragmentShader, uniforms) {
   const material = new T.ShaderMaterial({
     vertexShader: QUAD_VERT,
     fragmentShader,
@@ -331,13 +431,37 @@ function quadPass(fragmentShader, uniforms) {
   return {scene, material};
 }
 
-export function createUpscaler(renderer) {
+// Tuning defaults, chosen on tools/upscale-bench. Exposed as upscaler.tune for experiments.
+const TUNE = {
+  maxConf: 8, // frames of history while moving, at native scale (more when upscaling)
+  maxConfStill: 24, // frames of history where the image is still
+  gammaStill: 2.5, // clip-box width (standard deviations) for still pixels
+  gammaMove: 1.0, // and for moving ones
+  stillSpeed: 1.5, // output pixels per frame counted as moving
+  kernel: 0.5, // reconstruction kernel: 0 = internal-pixel sized, 1 = output-pixel sized
+  sharpenBoost: 0.12, // extra RCAS strength per step of upscale ratio
+  accum: 1, // 1 = accumulate individual samples (FSR 2 / DLSS style), 0 = blend filtered frames
+  accumK: 2.29, // sample weight falloff, exp(-k d^2) with d in output pixels
+  phases: 0, // jitter sequence length; 0 = automatic from the upscale ratio
+  mipBias: -0.5, // extra texture LOD bias on top of log2(render scale)
+  depthTrust: 1, // 0..1: how far depth-confirmed history keeps the wide clip box while moving
+  pullPenalty: 1.5, // how much clipped (stale) history loses confidence
+  speedPenalty: 0.03, // confidence lost per output pixel of motion per frame
+};
+
+// options.msaa: hardware multisampling on the internal frame (default 4). Combined with the
+// temporal pass it gives sub-pixel geometry such as wires real partial coverage in every
+// frame. On tile-based phone GPUs it is close to free.
+export function createUpscaler(renderer, T, {msaa = 4} = {}) {
+  const tune = {...TUNE};
+  const patchMaterial = mipBiasPatcher(T);
   const gl = renderer.getContext?.();
   const isWebGL2 = !!renderer.capabilities?.isWebGL2 || (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext);
   const halfFloat = isWebGL2 && !!(renderer.extensions?.has?.('EXT_color_buffer_float') || renderer.extensions?.has?.('EXT_color_buffer_half_float'));
   const supported = !!(gl && isWebGL2 && halfFloat && renderer.setRenderTarget);
+  const samples = isWebGL2 ? Math.min(msaa, renderer.capabilities?.maxSamples ?? 4) : 0;
   const quadCam = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const resolve = quadPass(RESOLVE_FRAG, {
+  const resolve = quadPass(T, RESOLVE_FRAG, {
     tColor: {value: null},
     tDepth: {value: null},
     tPrevDepth: {value: null},
@@ -347,19 +471,32 @@ export function createUpscaler(renderer) {
     outRes: {value: new T.Vector2(1, 1)},
     jitter: {value: new T.Vector2()},
     reproj: {value: new T.Matrix4()},
+    invViewProjW: {value: new T.Vector4()},
+    debugMotion: {value: 0},
     reset: {value: 1},
     havePrevDepth: {value: 0},
     maxConf: {value: 10},
+    maxConfStill: {value: 24},
+    gammaStill: {value: 2.5},
+    gammaMove: {value: 1.0},
+    stillSpeed: {value: 1.5},
+    pullPenalty: {value: 1.5},
+    depthTrust: {value: 0},
+    speedPenalty: {value: 0.03},
     kernelScale: {value: 1},
+    ratio: {value: 1},
+    accumMode: {value: 1},
+    accumK: {value: 2.29},
     clipRange: {value: new T.Vector2(0.1, 1000)},
   });
-  const output = quadPass(OUTPUT_FRAG, {
+  const output = quadPass(T, OUTPUT_FRAG, {
     tSrc: {value: null},
     tLow: {value: null},
     outRes: {value: new T.Vector2(1, 1)},
     lowJitter: {value: new T.Vector2()},
     sharpness: {value: 0.55},
     split: {value: -1},
+    debugConf: {value: 0},
   });
 
   // Moving meshes are redrawn through proxies that share their geometry, inside a scene of
@@ -457,12 +594,16 @@ export function createUpscaler(renderer) {
         type: T.UnsignedByteType,
         minFilter: T.LinearFilter,
         magFilter: T.LinearFilter,
+        samples,
         depthTexture: new T.DepthTexture(w, h, T.UnsignedIntType),
       });
       // Ask three to tone map and sRGB-encode into this target exactly as it does for the
       // screen (the same path WebXR layers use), so colours match with the upscaler off.
+      // Plain RGBA8 storage holds the encoded values as the screen would, and matches the
+      // multisample buffer's format so the MSAA resolve works.
       t.isXRRenderTarget = true;
       t.texture.colorSpace = T.SRGBColorSpace;
+      t.texture.internalFormat = 'RGBA8';
       t.depthTexture.minFilter = t.depthTexture.magFilter = T.NearestFilter;
       internals[i] = t;
     }
@@ -503,7 +644,10 @@ export function createUpscaler(renderer) {
     moving.length = 0;
     for (const scene of scenes)
       scene.traverseVisible(o => {
-        if (!o.isMesh || o.isInstancedMesh || !o.layers.test(camera.layers)) return;
+        if (!o.isMesh) return;
+        if (Array.isArray(o.material)) o.material.forEach(patchMaterial);
+        else if (o.material) patchMaterial(o.material);
+        if (o.isInstancedMesh || !o.layers.test(camera.layers)) return;
         const e = o.matrixWorld.elements,
           prev = prevMatrices.get(o);
         if (!prev) {
@@ -557,6 +701,7 @@ export function createUpscaler(renderer) {
   function render(draw, camera, {mode = 'quality', sharpness = 'standard', fps = 60, scenes = []} = {}) {
     let scale = UPSCALE_MODES[mode];
     if (!supported || !scale) {
+      mipBias.value = 0;
       if (internals[0] || history[0]) dispose();
       hasPrev = false;
       draw();
@@ -567,11 +712,14 @@ export function createUpscaler(renderer) {
       scale = autoScale;
     }
     ensureTargets(scale);
+    mipBias.value = Math.log2(inSize.x / outSize.x) + tune.mipBias;
     const internal = internals[ping],
       prevInternal = internals[1 - ping];
-    // Halton phase count grows with the upscale factor so every output pixel is visited.
+    // Halton phase count grows with the upscale factor so every output pixel is visited, and is
+    // a power of two so the base-2 axis of the sequence covers the pixel evenly (measured on the
+    // bench: 18 phases at 67% left visible structure, 32 did not).
     const ratio = outSize.x / inSize.x;
-    const phases = Math.max(8, Math.ceil(8 * ratio * ratio));
+    const phases = tune.phases || 2 ** Math.ceil(Math.log2(Math.max(32, 8 * ratio * ratio)));
     frameIndex = (frameIndex % phases) + 1;
     const jx = halton(frameIndex, 2) - 0.5,
       jy = halton(frameIndex, 3) - 0.5;
@@ -607,11 +755,28 @@ export function createUpscaler(renderer) {
     u.outRes.value.copy(outSize);
     u.jitter.value.set(jx, jy);
     u.reproj.value.multiplyMatrices(hasPrev ? prevViewProj : curViewProj, invViewProj);
+    const ie = invViewProj.elements;
+    u.invViewProjW.value.set(ie[3], ie[7], ie[11], ie[15]);
     u.reset.value = needsReset ? 1 : 0;
     u.havePrevDepth.value = havePrevDepth && !needsReset ? 1 : 0;
-    u.maxConf.value = 8 + 4 * (ratio - 1);
-    u.kernelScale.value = Math.sqrt(ratio);
+    u.maxConf.value = tune.maxConf + 4 * (ratio - 1);
+    u.maxConfStill.value = tune.maxConfStill + 4 * (ratio - 1);
+    u.gammaStill.value = tune.gammaStill;
+    u.gammaMove.value = tune.gammaMove;
+    u.stillSpeed.value = tune.stillSpeed;
+    u.pullPenalty.value = tune.pullPenalty;
+    // Measured: it helps when upscaling (history carries detail the low-res frame lacks) and
+    // costs a little at native scale, where the current frame alone is already sharp.
+    u.depthTrust.value = tune.depthTrust * Math.min(1, Math.max(0, (ratio - 1) / 0.5));
+    u.speedPenalty.value = tune.speedPenalty;
+    u.kernelScale.value = Math.pow(ratio, tune.kernel);
+    u.ratio.value = ratio;
+    u.accumMode.value = tune.accum;
+    u.accumK.value = tune.accumK;
     u.clipRange.value.set(camera.near, camera.far);
+    // tune.debug = 'motion': red/green = motion in x/y (8 px = full), blue = object motion vector
+    // used (dim blue: a velocity was there but rejected by the depth match).
+    u.debugMotion.value = tune.debug === 'motion' ? 1 : 0;
     const dst = history[1 - ping];
     renderer.setRenderTarget(dst);
     renderer.render(resolve.scene, quadCam);
@@ -623,7 +788,9 @@ export function createUpscaler(renderer) {
     o.lowJitter.value.set(jx / inSize.x, jy / inSize.y);
     // FSR's RCAS strength is exp2(-stops); stronger by default the further it upscales.
     const base = UPSCALE_SHARPNESS[sharpness] ?? UPSCALE_SHARPNESS.standard;
-    o.sharpness.value = Math.min(1, base + 0.12 * (ratio - 1));
+    o.sharpness.value = Math.min(1, base + tune.sharpenBoost * (ratio - 1));
+    // tune.debug = 'confidence' shows how many frames of history each pixel holds (white = full).
+    o.debugConf.value = tune.debug === 'confidence' ? u.maxConfStill.value : 0;
     renderer.setRenderTarget(prevTarget);
     renderer.render(output.scene, quadCam);
 
@@ -638,6 +805,7 @@ export function createUpscaler(renderer) {
   return {
     supported,
     render,
+    tune,
     reset: () => (needsReset = true),
     // Left part of the screen shows the raw internal frame stretched bilinearly, for comparison.
     setSplit: x => (output.material.uniforms.split.value = x == null ? -1 : x),

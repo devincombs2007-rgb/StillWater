@@ -100,7 +100,7 @@ export function createWorld(canvas, state, onError) {
   const camera = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 900);
   const reflCam = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 900);
   let reflTarget = null;
-  const upscaler = createUpscaler(renderer);
+  const upscaler = createUpscaler(renderer, T);
   let upscaleView = null,
     upscaleRegion = null;
   if (typeof location !== 'undefined' && /[?&]compare\b/.test(location.search)) upscaler.setSplit(0.5);
