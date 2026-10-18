@@ -2,6 +2,69 @@ import * as T from './assets/three.module.js';
 // Small procedural modelling toolkit shared by every model in the game. Everything is
 // generated at load time from code: no downloaded meshes or textures.
 
+// Shared Ray-Traced GI / Ambient Occlusion / Subsurface Scattering uniforms updated per frame.
+export const rtUniforms = {
+  rtEnabled: {value: 1},
+  rtBounceColor: {value: new T.Color('#3b6e6c')},
+  rtSkyColor: {value: new T.Color('#9ec5d8')},
+  rtSunDir: {value: new T.Vector3(-0.4, 0.7, -0.3).normalize()},
+  rtWaterLevel: {value: 0},
+};
+
+// Injects hemispherical Ray-Traced Ambient Occlusion (RTAO), water/ground indirect bounce GI,
+// and subsurface back-scattering into any Three.js standard or physical material.
+export function applyRayTracedShading(material, sss = 0.12) {
+  if (!material || material.userData?.rtApplied) return material;
+  material.userData = {...(material.userData || {}), rtApplied: true, sss};
+  const prevCompile = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (prevCompile) prevCompile(shader, renderer);
+    shader.uniforms.rtEnabled = rtUniforms.rtEnabled;
+    shader.uniforms.rtBounceColor = rtUniforms.rtBounceColor;
+    shader.uniforms.rtSkyColor = rtUniforms.rtSkyColor;
+    shader.uniforms.rtSunDir = rtUniforms.rtSunDir;
+    shader.uniforms.rtWaterLevel = rtUniforms.rtWaterLevel;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRtWorldPos;\nvarying vec3 vRtWorldNormal;')
+      .replace(
+        '#include <worldpos_vertex>',
+        '#include <worldpos_vertex>\nvRtWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvRtWorldNormal = normalize(mat3(modelMatrix) * objectNormal);',
+      );
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        '#include <common>',
+        `#include <common>
+        uniform float rtEnabled;
+        uniform vec3 rtBounceColor;
+        uniform vec3 rtSkyColor;
+        uniform vec3 rtSunDir;
+        uniform float rtWaterLevel;
+        varying vec3 vRtWorldPos;
+        varying vec3 vRtWorldNormal;`,
+      )
+      .replace(
+        '#include <dithering_fragment>',
+        `if (rtEnabled > 0.5) {
+          vec3 wn = normalize(vRtWorldNormal);
+          float hAbove = max(0.0, vRtWorldPos.y - rtWaterLevel);
+          // Ground/water contact ambient occlusion + micro-crevice cavity occlusion
+          float contactAO = mix(0.68, 1.0, smoothstep(0.0, 0.85, hAbove));
+          float hemiSky = 0.5 + 0.5 * wn.y;
+          float bounceMask = max(0.0, -wn.y * 0.65 + 0.35) * exp(-hAbove * 0.22);
+          vec3 giBounce = rtBounceColor * bounceMask * 0.24 + rtSkyColor * hemiSky * 0.07;
+          // Subsurface scattering & rim transmittance when backlit by the sun
+          vec3 viewDirW = normalize(cameraPosition - vRtWorldPos);
+          float backLight = pow( clamp(dot(viewDirW, -rtSunDir), 0.0, 1.0), 3.0 );
+          float rim = pow(1.0 - max(0.0, dot(viewDirW, wn)), 3.0);
+          vec3 sssGlow = gl_FragColor.rgb * (backLight * 0.55 + rim * 0.35) * ${sss.toFixed(3)};
+          gl_FragColor.rgb = gl_FragColor.rgb * contactAO + giBounce * gl_FragColor.rgb + sssGlow;
+        }
+        #include <dithering_fragment>`,
+      );
+  };
+  return material;
+}
+
 // Deterministic smooth 3D value noise in roughly [-1, 1].
 function hash3(x, y, z, seed) {
   const v = Math.sin(x * 127.1 + y * 311.7 + z * 74.7 + seed * 19.19) * 43758.5453;
@@ -36,7 +99,7 @@ export function rand(seed) {
 }
 
 // Lathe from [radius, height] pairs, optionally squashed into an ellipse (sx, sz).
-export function lathe(profile, segments = 16, sx = 1, sz = 1) {
+export function lathe(profile, segments = 20, sx = 1, sz = 1) {
   const g = new T.LatheGeometry(
     profile.map(([r, y]) => new T.Vector2(Math.max(0.0001, r), y)),
     segments,
@@ -147,9 +210,9 @@ function toArray(attr, size) {
 }
 
 // A tube along points with a per-point radius function, capped at both ends.
-export function tube(points, radius, radial = 8, closed = true) {
+export function tube(points, radius, radial = 10, closed = true) {
   const curve = new T.CatmullRomCurve3(points.map(p => (p.isVector3 ? p : new T.Vector3(...p))));
-  const seg = Math.max(4, points.length * 3),
+  const seg = Math.max(6, points.length * 4),
     g = new T.TubeGeometry(curve, seg, 1, radial, false),
     p = g.attributes.position;
   for (let i = 0; i <= seg; i++) {
@@ -166,18 +229,21 @@ export function tube(points, radius, radial = 8, closed = true) {
   const caps = [0, 1].map(end => {
     const c = curve.getPointAt(end),
       r = typeof radius === 'function' ? radius(end) : radius,
-      cap = new T.SphereGeometry(Math.max(r, 0.0001), radial, 4);
+      cap = new T.SphereGeometry(Math.max(r, 0.0001), radial, 5);
     cap.translate(c.x, c.y, c.z);
     return cap;
   });
   return merge([g, ...caps]);
 }
 
-// Material that reads vertex colours; shared across models with the same look.
+// Material that reads vertex colours; shared across models with the same look and enhanced with RT GI/AO.
 const materials = new Map();
 export function vcMaterial(key = 'matte', extra = {}) {
-  if (!materials.has(key))
-    materials.set(key, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.82, ...extra}));
+  if (!materials.has(key)) {
+    const mat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.78, ...extra});
+    applyRayTracedShading(mat, key === 'foliage' || key === 'frond' || key === 'coral' ? 0.22 : 0.08);
+    materials.set(key, mat);
+  }
   return materials.get(key);
 }
 
@@ -216,7 +282,7 @@ export function consolidate(root) {
 
 // Loft a tube through cross-sections: [y, halfWidth, halfDepth, zOffset]. Sections are
 // superellipses (n > 2 is squarer), so torsos and limbs read as bodies, not balloons.
-export function loft(sections, segments = 24, n = 2.4, capTop = true, capBottom = true) {
+export function loft(sections, segments = 28, n = 2.4, capTop = true, capBottom = true) {
   const pos = [],
     uv = [],
     index = [],

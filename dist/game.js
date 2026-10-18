@@ -12,6 +12,7 @@ import {
   APPAREL,
   QUESTS,
   COLLECTION_GOALS,
+  STORY_CHAPTERS,
   KEY,
   freshState,
   sanitize,
@@ -22,6 +23,8 @@ import {
   collect,
   recordCatch,
   claimCollection,
+  claimStoryChapter,
+  dailyRequest,
   cleanName,
   growth,
   fishWeight,
@@ -33,7 +36,11 @@ import {
   rebirth,
   effectiveRod,
   apparelLuck,
-} from './economy.js?v=8';
+  MORPH_NAMES,
+  canBreed,
+  breedCost,
+  breedResidents,
+} from './economy.js?v=10';
 import {
   worldConditions,
   startEncounter,
@@ -43,18 +50,18 @@ import {
   resolveFailure,
   reelProfile,
   isReelHit,
+  isPerfectHit,
   WEATHER_NAMES,
-} from './fishing.js?v=8';
+} from './fishing.js?v=10';
 // The one place the release number lives; shown faintly in a corner like any shipped game.
 // BUILD must match index.html's stillwater-build marker (the offline test checks it).
-export const VERSION = '1.6.0',
-  BUILD = 8;
-import {createWorld} from './scene.js?v=8';
-import {SKINS, HAIRS, EYES, HAIR_STYLES, FACIAL_HAIR} from './angler.js?v=8';
-import {createAudio} from './audio.js?v=8';
-import {showPreview, stopPreview} from './preview.js?v=8';
-import {fishThumbnail, itemThumbnail, showKeeper, stopKeeper} from './preview.js?v=8';
-import {fishSvg} from './art.js?v=8';
+export const VERSION = '1.8.0',
+  BUILD = 10;
+import {createWorld} from './scene.js?v=10';
+import {SKINS, HAIRS, EYES, HAIR_STYLES, FACIAL_HAIR} from './angler.js?v=10';
+import {createAudio} from './audio.js?v=10';
+import {showPreview, stopPreview, fishThumbnail, itemThumbnail, showKeeper, stopKeeper} from './preview.js?v=10';
+import {fishSvg} from './art.js?v=10';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
   esc = v =>
@@ -76,6 +83,7 @@ let currentView = 'lake',
   shopTab = 'gear',
   journalFilter = 'all',
   selectedUID = null,
+  selectedSpeciesId = null,
   focusBefore,
   toastTimer,
   offlineReady = false,
@@ -96,12 +104,21 @@ let currentView = 'lake',
   lastSave = lastTick,
   conditions = worldConditions(Date.now(), state.region);
 const MOODS = ['Moonlit', 'Sunset', 'Forest'];
+const SCENE_NOTES = [
+  '<span>✧</span> Willow leaves drift where the shallows warm.',
+  '<span>✧</span> Listen to the mossy cascade along the creek.',
+  '<span>✧</span> Crystal light hums beneath the forest pines.',
+  '<span>✧</span> The harbour skiff rocks with the evening tide.',
+  '<span>✧</span> Sunlit coral gardens shimmer under the hull.',
+  '<span>✧</span> Out on the open blue, every wave is a story.',
+];
 let freshDiscovery = false,
   keeperWave = false;
 let inTitle = true,
   introStarted = false;
 const hasExisting = !!state.character;
 sound.setVolume?.(state.volume);
+sound.setMusic?.(state.musicOn !== false);
 const interrupted = !!state.activeCast;
 state.activeCast = false;
 let world = createWorld($('#world'), state, e =>
@@ -135,6 +152,19 @@ function toast(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 3600);
 }
+function triggerSplashRing() {
+  const el = $('#cast-splash');
+  if (!el) return;
+  el.classList.remove('show');
+  void el.offsetWidth;
+  el.classList.add('show');
+}
+function updateReelPips(streak = 0) {
+  ['#pull-one', '#pull-two', '#pull-three'].forEach((id, idx) => {
+    const el = $(id);
+    if (el) el.classList.toggle('filled', idx < streak);
+  });
+}
 function hud() {
   const rod = effectiveRod(state),
     bait = BAITS[state.bait];
@@ -165,15 +195,53 @@ function hud() {
     .filter(Boolean)
     .join(' · ')
     .toUpperCase();
+  const noteEl = $('#scene-note');
+  if (noteEl) {
+    if (currentView === 'tank') {
+      noteEl.innerHTML = `<span>✧</span> ${MOODS[state.mood]} sanctuary · ${state.fish.length} quiet lives in your care.`;
+    } else {
+      const req = dailyRequest(state);
+      noteEl.innerHTML = !req.done
+        ? `<span>✧</span> Milo’s tide request: <b>${esc(req.species.name)}</b> (${esc(req.region.name)}) · +${req.bonus} ◇`
+        : SCENE_NOTES[state.region] || '<span>✧</span> Nothing to rush. Nowhere else to be.';
+    }
+  }
+  const ch = STORY_CHAPTERS[state.storyChapter || 0];
   const q = QUESTS[state.quest];
-  $('#quest-title').textContent = q?.name || 'Keeper of the water';
-  $('#quest-count').textContent = q ? `${Math.min(state.total, q.target)} / ${q.target}` : 'All milestones complete';
-  $('#quest-fill').style.width = q ? Math.min(100, (state.total / q.target) * 100) + '%' : '100%';
-  const ready = q && state.total >= q.target;
-  $('#quest-claim').hidden = !ready;
-  $('#quest-reward').hidden = !!ready || !q;
-  $('#quest-claim').textContent = 'Claim ' + (q?.reward || 0) + ' ◇';
-  $('#quest-reward').textContent = '+' + (q?.reward || 0) + ' pearls';
+  const useStory = state.storyMode !== false && (ch || !q);
+  const modeBtn = $('#toggle-goal-mode');
+  if (modeBtn) modeBtn.textContent = useStory ? 'Story ↻' : 'Milestones ↻';
+  if (useStory) {
+    if (ch) {
+      const p = ch.progress(state),
+        ready = p.current >= p.target;
+      $('#quest-eyebrow').textContent = ch.eyebrow;
+      $('#quest-title').textContent = ch.title;
+      $('#quest-count').textContent = p.label;
+      $('#quest-fill').style.width = Math.min(100, (p.current / p.target) * 100) + '%';
+      $('#quest-claim').hidden = !ready;
+      $('#quest-reward').hidden = !!ready;
+      $('#quest-claim').textContent = 'Complete · +' + ch.reward + ' ◇';
+      $('#quest-reward').textContent = '+' + ch.reward + ' ◇';
+    } else {
+      $('#quest-eyebrow').textContent = 'SANCTUARY CHRONICLES';
+      $('#quest-title').textContent = 'All 8 chapters complete';
+      $('#quest-count').textContent = '+24% income · +16% luck active';
+      $('#quest-fill').style.width = '100%';
+      $('#quest-claim').hidden = true;
+      $('#quest-reward').hidden = true;
+    }
+  } else {
+    $('#quest-eyebrow').textContent = 'ANGLER MILESTONES';
+    $('#quest-title').textContent = q?.name || 'Keeper of the water';
+    $('#quest-count').textContent = q ? `${Math.min(state.total, q.target)} / ${q.target}` : 'All milestones complete';
+    $('#quest-fill').style.width = q ? Math.min(100, (state.total / q.target) * 100) + '%' : '100%';
+    const ready = q && state.total >= q.target;
+    $('#quest-claim').hidden = !ready;
+    $('#quest-reward').hidden = !!ready || !q;
+    $('#quest-claim').textContent = 'Claim ' + (q?.reward || 0) + ' ◇';
+    $('#quest-reward').textContent = '+' + (q?.reward || 0) + ' pearls';
+  }
 }
 function setView(v) {
   if (v === 'shop' || v === 'journal') {
@@ -210,7 +278,10 @@ const buzz = pattern => {
 function setStage(s) {
   if (s === 'bite') buzz(70);
   stage = s;
-  if (s !== 'reeling') sound.tension?.(0);
+  if (s !== 'reeling') {
+    sound.tension?.(0);
+    updateReelPips(0);
+  }
   world?.setCast(s);
   document.body.classList.toggle('is-fishing', s !== 'idle');
   document.body.classList.toggle('catch-mode', ['catch', 'landing', 'travel'].includes(s));
@@ -220,7 +291,7 @@ function setStage(s) {
   $('#charge-meter').hidden = s !== 'charging';
   $('#reel-meter').hidden = s !== 'reeling';
   $('#tension-panel').hidden = s !== 'reeling';
-  $('#reel-progress').hidden = true;
+  $('#reel-progress').hidden = s !== 'reeling';
   $('#let-go').hidden = !['waiting', 'bite', 'reeling'].includes(s);
   const labels = {
     idle: 'Cast your line',
@@ -235,7 +306,7 @@ function setStage(s) {
   };
   $('#cast-label').textContent = labels[s] || labels.idle;
   $('#cast-hint').textContent =
-    s === 'idle' ? 'HOLD & RELEASE' : s === 'bite' ? 'HOOK NOW' : s === 'reeling' ? 'WATCH TENSION' : '';
+    s === 'idle' ? 'HOLD & RELEASE' : s === 'bite' ? 'HOOK NOW' : s === 'reeling' ? 'CENTER GLOW = PERFECT' : '';
   $('#cast-icon').textContent = s === 'bite' ? '!' : s === 'reeling' ? '≈' : '↗';
   $('#fishing-status').textContent =
     {
@@ -243,7 +314,7 @@ function setStage(s) {
       charging: 'Release when the cast feels right.',
       waiting: 'The bobber follows the water.',
       bite: 'A short window. A steady hand.',
-      reeling: 'Reel in the glow. Let high tension ease.',
+      reeling: 'Reel in the glow. 3 hits in a row calm the line.',
       landing: 'Up from the water.',
       catch: 'Drag the scene to turn your fish.',
     }[s] || '';
@@ -258,14 +329,22 @@ function startCharge() {
 }
 function cast() {
   if (stage !== 'charging') return;
+  const activeRise = !!world?.hasActiveRise?.();
   conditions = worldConditions(Date.now(), state.region);
-  encounter = startEncounter(state, conditions);
+  const castCond = activeRise
+    ? {...conditions, rarity: conditions.rarity * 1.25, bite: Math.min(0.99, (conditions.bite || 1) * 1.15)}
+    : conditions;
+  encounter = startEncounter(state, castCond);
   setFishPower(encounter, SPECIES.find(f => f.id === encounter.fish.id).rarity);
   save();
   setStage('waiting');
   world?.cast?.(charge);
+  triggerSplashRing();
   sound.play('cast');
-  waitUntil = performance.now() + 4300 + Math.random() * 3500 - charge * 1100;
+  if (activeRise) {
+    $('#fishing-status').textContent = '✧ Surface rise cast! +25% feeding luck on the ripples.';
+  }
+  waitUntil = performance.now() + (activeRise ? 3200 : 4300) + Math.random() * 3500 - charge * 1100;
   hud();
 }
 function fail(reason) {
@@ -303,14 +382,16 @@ function action() {
     nextTap = 0;
     world?.setTension?.(encounter.tension);
     setStage('reeling');
+    triggerSplashRing();
     const profile = reelProfile(encounter.rarity);
     $('#sweet-zone').style.left = (0.5 - profile.width / 2) * 100 + '%';
     $('#sweet-zone').style.width = profile.width * 100 + '%';
+    updateReelPips(0);
     // Say straight away when the hooked fish is beyond this tackle, so letting go is a real choice.
     $('#fishing-status').textContent =
       encounter.power > Math.min(effectiveRod(state).power, LINES[state.line].power) * 1.1
         ? 'Heavy! This fish outmatches your tackle. Let it go or risk a break.'
-        : 'Hooked! Tap while the marker is in the glow.';
+        : 'Hooked! Hit the center glow for a Perfect Pull.';
     sound.play('reel');
     return;
   }
@@ -318,25 +399,51 @@ function action() {
   nextTap = performance.now() + 330;
   const outcome = reelPull(encounter, state, cursor);
   world?.reel?.(encounter.tension, encounter.progress);
-  sound.play('reel');
+  updateReelPips(encounter.streak || 0);
+  if (encounter.lastHit === 'rhythm') {
+    sound.play('rhythm');
+    triggerSplashRing();
+    buzz(35);
+  } else if (encounter.lastHit === 'perfect') {
+    sound.play('perfect');
+    buzz(20);
+  } else {
+    sound.play('reel');
+  }
   $('#cast').classList.remove('reel-hit');
   void $('#cast').offsetWidth;
   $('#cast').classList.add('reel-hit');
   if (outcome === 'caught') land();
   else if (outcome) fail(outcome);
-  else
-    $('#fishing-status').textContent =
-      encounter.power > Math.min(effectiveRod(state).power, LINES[state.line].power) * 1.1
-        ? 'This fish overpowers your tackle. Let go or risk a break.'
-        : isReelHit(encounter, cursor)
-          ? 'A firm pull. The bobber comes closer.'
-          : 'Too much pressure. Ease off before the next pull.';
+  else {
+    const overpowered = encounter.power > Math.min(effectiveRod(state).power, LINES[state.line].power) * 1.1;
+    if (overpowered) {
+      $('#fishing-status').textContent = 'This fish overpowers your tackle. Let go or risk a break.';
+    } else if (encounter.lastHit === 'rhythm') {
+      $('#fishing-status').textContent = '✧ Steady rhythm! Line tension eased & distance gained.';
+    } else if (encounter.lastHit === 'perfect') {
+      $('#fishing-status').textContent = '✧ Perfect center pull! Smooth progress with low tension.';
+    } else if (encounter.lastHit === 'good') {
+      const postureNote =
+        encounter.posture === 'resting'
+          ? 'Fish is gliding—steady pull!'
+          : encounter.posture === 'darting'
+            ? 'Fish is darting! Watch your tension.'
+            : 'A firm pull. The bobber comes closer.';
+      $('#fishing-status').textContent = postureNote;
+    } else {
+      $('#fishing-status').textContent = 'Missed the glow—streak reset. Let tension ease.';
+    }
+  }
 }
 function land() {
   const fish = encounter.fish,
     sp = SPECIES.find(f => f.id === fish.id),
     isNew = !state.found.includes(fish.id),
-    newRecord = fish.length > (state.records[fish.id]?.best || 0);
+    prevBest = state.records[fish.id]?.best || 0,
+    newRecord = prevBest > 0 && fish.length > prevBest,
+    req = dailyRequest(state),
+    tideMatch = !req.done && req.species.id === fish.id;
   state.total++;
   state.activeCast = false;
   recordCatch(state, fish);
@@ -344,7 +451,19 @@ function land() {
     state.found.push(fish.id);
     freshDiscovery = true;
   }
-  pending = {...fish, isNew, newRecord};
+  if (tideMatch) {
+    state.lastTideDay = req.day;
+    state.tidesCompleted = (state.tidesCompleted || 0) + 1;
+    state.pearls += req.bonus;
+    state.lifetimeEarned = (state.lifetimeEarned || 0) + req.bonus;
+  }
+  pending = {
+    ...fish,
+    isNew,
+    newRecord,
+    tideBonus: tideMatch ? req.bonus : 0,
+    perfects: encounter.perfects || 0,
+  };
   state.pending = pending;
   encounter = null;
   save();
@@ -356,8 +475,10 @@ function land() {
 }
 function finishCatch(keep) {
   if (!pending) return;
-  const value = releaseValue(pending),
-    uid = pending.uid;
+  const baseValue = releaseValue(pending),
+    value = pending.tideBonus ? Math.ceil(baseValue * 1.5) : baseValue,
+    uid = pending.uid,
+    tideExtra = pending.tideBonus || 0;
   if (keep && !keepFish(state, pending)) return toast('The aquarium is full. Release this catch or expand your tank.');
   if (!keep) {
     state.pearls += value;
@@ -382,10 +503,18 @@ function finishCatch(keep) {
       world?.arrive?.(uid);
     }, 180);
     setTimeout(() => document.body.classList.remove('scene-travel'), 750);
-    toast('A new arrival. Watch the water and the residents.');
+    toast(
+      tideExtra
+        ? `New arrival + Milo’s Tide Bonus (+${tideExtra} ◇)!`
+        : 'A new arrival. Watch the water and the residents.',
+    );
   } else {
     sound.play('coin');
-    toast('Released to the wild · +' + value + ' pearls.');
+    toast(
+      tideExtra
+        ? `Released for +${value} ◇ (1.5× Tide Request) + ${tideExtra} ◇ bonus!`
+        : 'Released to the wild · +' + value + ' pearls.',
+    );
   }
   if (!state.character) setTimeout(() => openPanel('character'), 700);
 }
@@ -410,7 +539,10 @@ $('#cast').addEventListener('pointercancel', () => {
   pointerId = null;
   if (stage === 'charging') setStage('idle');
 });
-$('#cast').addEventListener('lostpointercapture', () => (pointerId = null));
+$('#cast').addEventListener('lostpointercapture', () => {
+  pointerId = null;
+  if (stage === 'charging') setStage('idle');
+});
 $('#cast').addEventListener('click', e => {
   e.preventDefault();
   if (performance.now() >= suppressClick) action();
@@ -457,6 +589,10 @@ document.addEventListener('keyup', e => {
     e.preventDefault();
     cast();
   }
+});
+window.addEventListener('blur', () => {
+  pointerId = null;
+  if (stage === 'charging') setStage('idle');
 });
 // Dip the world to deep water-blue and back so view and place changes never hard-cut.
 function dip(change) {
@@ -526,10 +662,39 @@ $('#collect').onclick = () => {
   sound.play('coin');
   toast('Collected ' + fmt(n) + ' pearls.');
 };
+$('#toggle-goal-mode').onclick = e => {
+  e.stopPropagation();
+  state.storyMode = state.storyMode === false;
+  save();
+  hud();
+  toast(
+    state.storyMode
+      ? 'Tracking Sanctuary Chronicles on your HUD.'
+      : 'Tracking Angler Catch Milestones on your HUD.',
+  );
+};
+$('#quest-title').onclick = () => {
+  if (stage !== 'idle') return;
+  journalFilter = 'chronicles';
+  openPanel('journal');
+};
 $('#quest-claim').onclick = () => {
+  const ch = STORY_CHAPTERS[state.storyChapter || 0];
   const q = QUESTS[state.quest];
+  const useStory = state.storyMode !== false && (ch || !q);
+  if (useStory && ch) {
+    const reward = claimStoryChapter(state);
+    if (reward) {
+      save();
+      hud();
+      sound.play('story');
+      toast(`${ch.title} complete! +${reward} ◇ & permanent sanctuary keepsake bonus.`);
+    }
+    return;
+  }
   if (q && state.total >= q.target) {
     state.pearls += q.reward;
+    state.lifetimeEarned = (state.lifetimeEarned || 0) + q.reward;
     state.quest++;
     save();
     hud();
@@ -537,11 +702,11 @@ $('#quest-claim').onclick = () => {
   }
 };
 $('#sound').onclick = async () => {
-  const on = await sound.toggle();
+  const next = !state.audioOn || !sound.enabled;
+  const on = await sound.enable(next);
   state.audioOn = on;
   save();
-  document.body.classList.toggle('sound-on', on);
-  $('#sound').setAttribute('aria-label', on ? 'Mute water sounds' : 'Enable water sounds');
+  updateSoundButton(on);
 };
 function focus(on) {
   world?.setFocus?.(on);
@@ -689,27 +854,51 @@ function shop() {
       ),
     ).join('');
   } else {
-    list = `<div class="rebirth-card"><span class="eyebrow">JOURNEY ${state.rebirth} / 3</span><h3>${state.rebirth === 3 ? 'Chapter complete.' : 'Begin again, with the tide.'}</h3><p>${state.rebirth === 3 ? 'You have reached the current development endpoint. Keep collecting and growing your sanctuary; a fourth rebirth is not available.' : 'Rebirth resets pearls, rods, lines, boats, aquarium upgrades, residents, and unlocked waters. Your character, clothing, bait unlocks, field notes, and catch records remain.'}</p><p>Each rebirth permanently adds 25% aquarium income and 12% fishing luck. Current bonus: +${state.rebirth * 25}% income · +${state.rebirth * 12}% luck.</p><ul><li>${state.total >= 100 ? '✓' : '○'} Land 100 fish in this journey</li><li>${state.regions.includes(4) ? '✓' : '○'} Unlock Sunbreak Reef</li><li>${state.pearls >= 25000 ? '✓' : '○'} Hold 25,000 pearls</li></ul><button class="primary-button" id="rebirth-now" ${canRebirth(state) ? '' : 'disabled'}>${confirmRebirth ? 'Confirm reset · keep permanent progress' : 'Rebirth with the tide'}</button></div>`;
+    list = `<div class="rebirth-card"><span class="eyebrow">JOURNEY ${state.rebirth} / 3</span><h3>${state.rebirth === 3 ? 'Chapter complete.' : 'Begin again, with the tide.'}</h3><p>${state.rebirth === 3 ? 'You have reached the current rebirth endpoint. Keep collecting and growing your sanctuary; a fourth rebirth is not available.' : 'Rebirth resets pearls, rods, lines, boats, aquarium upgrades, residents, and unlocked waters. Your character, clothing, bait unlocks, story chronicles, field notes, and catch records remain.'}</p><p>Each rebirth permanently adds 25% aquarium income and 12% fishing luck. Current bonus: +${state.rebirth * 25}% income · +${state.rebirth * 12}% luck.</p><ul><li>${state.total >= 100 ? '✓' : '○'} Land 100 fish in this journey</li><li>${state.regions.includes(4) ? '✓' : '○'} Unlock Sunbreak Reef</li><li>${state.pearls >= 25000 ? '✓' : '○'} Hold 25,000 pearls</li></ul><button class="primary-button" id="rebirth-now" ${canRebirth(state) ? '' : 'disabled'}>${confirmRebirth ? 'Confirm reset · keep permanent progress' : 'Rebirth with the tide'}</button></div>`;
   }
-  return `${keeper()}<span class="eyebrow">MILO’S BAIT SHOP</span><h2 id="panel-title">Good tackle. Good company.</h2><p class="intro">${fmt(state.pearls)} pearls available. Rods, permanent lures, apparel, and your growing aquarium compete for the same pearls.</p><div class="tabs market-tabs">${tabs.map(([id, name]) => `<button data-tab="${id}" class="${shopTab === id ? 'selected' : ''}">${name}</button>`).join('')}</div><div class="shop-list">${list}</div>`;
+  const req = dailyRequest(state);
+  const tideBanner = `<div class="tide-request-banner"><div><span class="eyebrow">MILO’S DAILY TIDE REQUEST</span><strong>${esc(req.species.name)} · ${esc(req.region.name)}</strong><small>${req.done ? '✓ Fulfilled for this tide · check back next world day' : `Land one today for +${req.bonus} ◇ bonus & 1.5× release value`}</small></div><span class="tide-badge">${req.done ? 'Done' : '+' + req.bonus + ' ◇'}</span></div>`;
+  return `${keeper()}${tideBanner}<span class="eyebrow">MILO’S BAIT SHOP</span><h2 id="panel-title">Good tackle. Good company.</h2><p class="intro">${fmt(state.pearls)} pearls available. Rods, permanent lures, apparel, and your growing aquarium compete for the same pearls.</p><div class="tabs market-tabs">${tabs.map(([id, name]) => `<button data-tab="${id}" class="${shopTab === id ? 'selected' : ''}">${name}</button>`).join('')}</div><div class="shop-list">${list}</div>`;
 }
 function keeper() {
   return `<div class="keeper-welcome"><div class="keeper-portrait keeper-stage" id="keeper-stage"><svg viewBox="0 0 160 150" aria-label="Milo, the smiling bait shop keeper" role="img"><defs><linearGradient id="apron" x2="0" y2="1"><stop stop-color="#9ab49e"/><stop offset="1" stop-color="#527a6d"/></linearGradient></defs><circle cx="80" cy="76" r="65" fill="#c1ae8120"/><path d="M33 140V111Q40 86 80 86Q120 86 127 111V140" fill="#e7ce9e"/><path d="M57 93L47 139H113L103 93L92 108H68Z" fill="url(#apron)"/><rect x="64" y="116" width="32" height="18" rx="5" fill="#416959"/><path d="M69 123q11-12 22 0q-11 12-22 0" fill="#dfd8b5"/><ellipse cx="80" cy="64" rx="35" ry="37" fill="#d9ad85"/><ellipse cx="46" cy="64" rx="6" ry="10" fill="#d9ad85"/><ellipse cx="114" cy="64" rx="6" ry="10" fill="#d9ad85"/><path d="M45 53Q44 22 80 21Q113 20 116 54Q97 47 80 46Q61 47 45 53" fill="#a4936b"/><path d="M39 49Q80 31 121 49L126 57Q81 47 35 58Z" fill="#c9b98a"/><path d="M59 65q5-5 10 0M91 65q5-5 10 0" fill="none" stroke="#4d5045" stroke-width="3" stroke-linecap="round"/><ellipse cx="59" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><ellipse cx="101" cy="75" rx="7" ry="4" fill="#c98776" opacity=".5"/><path d="M68 81q12 12 24 0" fill="none" stroke="#825b4c" stroke-width="2.5" stroke-linecap="round"/><path d="M4 139H156V150H4Z" fill="#7d6a4f"/><path d="M8 143h144" stroke="#aa9470"/><path d="M123 119q12-19 19-4q5 9-6 18" fill="#d9ad85"/></svg></div><div><span class="eyebrow">MILO · YOUR BAIT KEEPER</span><p>“Hello! Welcome to the bait shop.”</p><small>A little patience. A lure you love.</small></div></div>`;
 }
+function chroniclesMarkup() {
+  const cur = state.storyChapter || 0;
+  return `<div class="chronicles-list">${STORY_CHAPTERS.map((ch, idx) => {
+    const done = idx < cur,
+      active = idx === cur,
+      locked = idx > cur,
+      p = ch.progress(state),
+      ready = active && p.current >= p.target;
+    return `<article class="chronicle-card ${done ? 'done' : active ? 'active' : 'locked'}"><div class="chronicle-head"><span class="eyebrow">${ch.eyebrow}</span><span class="chronicle-status">${done ? '✓ Completed' : active ? p.label : 'Locked chapter'}</span></div><h3>${ch.title}</h3>${
+      locked
+        ? '<p class="chronicle-quote">Complete the current chapter to turn the next page of Milo’s ledger.</p>'
+        : `<blockquote class="chronicle-quote">${ch.quote}<cite>— ${ch.speaker}</cite></blockquote><p class="chronicle-obj"><b>Goal:</b> ${ch.objective} · <b>Keepsake:</b> +${ch.reward} ◇, +3% income &amp; +2% luck</p>`
+    }${
+      ready
+        ? `<button class="primary-button chronicle-claim" data-claim-story="${idx}">Complete chapter · Claim ${ch.reward} ◇</button>`
+        : ''
+    }</article>`;
+  }).join('')}</div>`;
+}
 function extrasView() {
-  return `<span class="eyebrow">LITTLE DETAILS, LONG TIDES</span><h2 id="panel-title">Extra</h2><p>Created by ChatGPT and Devin Combs.</p><p><b>Free fishing</b> is the current game: build your collection, raise your fish, and decide where your pearls go.</p><p><b>Story mode</b> is a future idea. It has not been implemented. A story-led journey and a separate ongoing free-fishing mode are recorded in the development handoff.</p><p>Version 1.5 · The Living Water. All purchases use earned in-game pearls.</p><button class="secondary-button" id="extra-back">Back</button>`;
+  const bestLen = Math.max(0, ...Object.values(state.records || {}).map(r => r.best || 0));
+  const rate = state.attempts ? Math.round((state.total / state.attempts) * 100) : 0;
+  return `<span class="eyebrow">LITTLE DETAILS, LONG TIDES · V${VERSION}</span><h2 id="panel-title">Sanctuary Almanac &amp; Story</h2><p>Created by ChatGPT and Devin Combs. All upgrades and keepsakes use earned in-game pearls.</p><div class="profile-stats"><div><strong>${state.storyChapter || 0} / ${STORY_CHAPTERS.length}</strong><span>Story chapters</span></div><div><strong>${state.found.length} / ${SPECIES.length}</strong><span>Species found</span></div><div><strong>${state.total} (${rate}%)</strong><span>Landed · success</span></div><div><strong>${bestLen ? fmtLength(bestLen) : '—'}</strong><span>Longest catch</span></div><div><strong>${state.perfectPulls || 0}</strong><span>Perfect pulls</span></div><div><strong>${fmt(state.lifetimeEarned || 0)} ◇</strong><span>Lifetime pearls</span></div></div><p><b>Sanctuary Chronicles (Story Mode)</b> guides you from Willow Lake to the Open Blue across eight narrative chapters, each granting permanent sanctuary income (+3%) and fishing luck (+2%). <b>Free Fishing</b> is always open alongside your story.</p><div class="quality-options"><button class="secondary-button" id="extra-toggle-story">${state.storyMode !== false ? 'HUD: Showing Story Chronicles · tap for Milestones' : 'HUD: Showing Catch Milestones · tap for Story Chronicles'}</button></div>${chroniclesMarkup()}<button class="secondary-button" id="extra-back">Back</button>`;
 }
 function newGameView() {
-  return `<span class="eyebrow">A FRESH BEGINNING</span><h2 id="panel-title">Start a new sanctuary?</h2><p>This replaces the progress saved on this device. Use Options to export your current save first.</p><button class="primary-button" id="confirm-new">Replace my save & start new</button><button class="secondary-button" id="cancel-new">Keep my sanctuary</button>`;
+  return `<span class="eyebrow">A FRESH BEGINNING</span><h2 id="panel-title">Start a new sanctuary?</h2><p>This replaces the progress saved on this device. Use Options to export your current save first.</p><button class="primary-button" id="confirm-new">Replace my save &amp; start new</button><button class="secondary-button" id="cancel-new">Keep my sanctuary</button>`;
 }
 function modelMarkup(f) {
-  return `<div class="fish-preview" id="model-preview">${fishSvg(f)}</div><span class="model-hint">DRAG TO TURN</span>`;
+  return `<div class="fish-preview" id="model-preview">${fishSvg(f)}</div><span class="model-hint">DRAG TO TURN IN 3D</span>`;
 }
 function catchView() {
   const f = SPECIES.find(x => x.id === pending.id),
-    value = releaseValue(pending),
+    baseVal = releaseValue(pending),
+    value = pending.tideBonus ? Math.ceil(baseVal * 1.5) : baseVal,
     full = state.fish.length >= TANKS[state.tank].capacity;
-  return `<div class="catch-stats" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A CATCH, EARNED</span><h2 id="panel-title">${f.name}</h2><div class="rarity">${RARITIES[f.rarity]} · ${pending.isNew ? 'NEW DISCOVERY' : 'RETURNING SPECIES'}</div><p class="catch-instruction">Your angler holds the line. Drag the scene to rotate the dangling fish.</p><div class="profile-stats"><div><strong>${fmtWeight(fishWeight(pending))}</strong><span>Weight now</span></div><div><strong>${fmtLength(pending.length)}</strong><span>Adult length</span></div><div><strong>${pending.potential.toFixed(2)}×</strong><span>Growth potential</span></div></div><p>${growth(pending) < 1 ? 'Juvenile · raise it for more income and a higher release value.' : 'Adult · ready for your sanctuary or the wild.'}${pending.newRecord ? ' A new length record.' : ''}</p><button class="primary-button" id="keep-catch" ${full ? 'disabled' : ''}>${full ? 'Aquarium full' : 'Welcome to the aquarium'} ↗</button><button class="secondary-button" id="release-catch">Release now · +${value} ◇</button></div>`;
+  return `<div class="catch-stats" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A CATCH, EARNED</span><h2 id="panel-title">${f.name}</h2><div class="rarity">${RARITIES[f.rarity]}${pending.morph && MORPH_NAMES[pending.morph] ? ` · ✧ ${MORPH_NAMES[pending.morph].toUpperCase()}` : ''} · ${pending.isNew ? 'NEW DISCOVERY' : 'RETURNING SPECIES'}${pending.tideBonus ? ` · TIDE REQUEST +${pending.tideBonus} ◇` : ''}</div><p class="species-lore">“${esc(f.note)}”</p><p class="catch-instruction">Your angler holds the line. Drag the scene to rotate the dangling fish.</p><div class="profile-stats"><div><strong>${fmtWeight(fishWeight(pending))}</strong><span>Weight now</span></div><div><strong>${fmtLength(pending.length)}</strong><span>Adult length</span></div><div><strong>${pending.potential.toFixed(2)}×</strong><span>Growth potential</span></div></div><p>${growth(pending) < 1 ? 'Juvenile · raise it for more income and a higher release value.' : 'Adult · ready for your sanctuary or the wild.'}${pending.newRecord ? ' A new length record!' : ''}${pending.perfects ? ` · ${pending.perfects} perfect pull${pending.perfects > 1 ? 's' : ''}.` : ''}</p><button class="primary-button" id="keep-catch" ${full ? 'disabled' : ''}>${full ? 'Aquarium full' : 'Welcome to the aquarium'} ↗</button><button class="secondary-button" id="release-catch">Release now · +${value} ◇${pending.tideBonus ? ' (1.5× Tide)' : ''}</button></div>`;
 }
 function collectionView() {
   const g = COLLECTION_GOALS[state.collectionClaimed];
@@ -718,6 +907,21 @@ function collectionView() {
     : '<p>All current species discovered. An ocean of stories.</p>';
 }
 function journal(residents = false) {
+  if (!residents && journalFilter === 'chronicles') {
+    return `<span class="eyebrow">THE SANCTUARY CHRONICLES</span><h2 id="panel-title">Eight chapters on the water.</h2><p class="intro">${state.storyChapter || 0} / ${STORY_CHAPTERS.length} chapters completed · +${(state.storyChapter || 0) * 3}% sanctuary income &amp; +${(state.storyChapter || 0) * 2}% fishing luck keepsake bonus.</p><div class="journal-filters">${[
+      ['all', 'All waters'],
+      ['found', 'Found'],
+      ['missing', 'Still to find'],
+      ['fresh', 'Freshwater'],
+      ['salt', 'Saltwater'],
+      ['chronicles', 'Chronicles'],
+    ]
+      .map(
+        ([id, name]) =>
+          `<button data-filter="${id}" class="${journalFilter === id ? 'selected' : ''}">${name}</button>`,
+      )
+      .join('')}</div>${chroniclesMarkup()}`;
+  }
   const list = residents
     ? state.fish.map(r => ({f: SPECIES.find(f => f.id === r.id), r}))
     : SPECIES.filter(
@@ -725,9 +929,10 @@ function journal(residents = false) {
           journalFilter === 'all' ||
           (journalFilter === 'found' && state.found.includes(f.id)) ||
           (journalFilter === 'missing' && !state.found.includes(f.id)) ||
+          (journalFilter === 'fresh' && f.region < 3) ||
           (journalFilter === 'salt' && f.region >= 3),
       ).map(f => ({f}));
-  return `<span class="eyebrow">${residents ? 'LITTLE LIVES, GROWING' : 'YOUR FIELD NOTES'}</span><h2 id="panel-title">${residents ? 'A home worth growing.' : 'Sixty stories in the water.'}</h2><p class="intro">${residents ? `${state.fish.length} residents · ${income(state).toFixed(2)} pearls / sec. Baby fish grow naturally; care upgrades improve income and future release value.` : `${state.found.length} / ${SPECIES.length} species discovered. Bait, tackle, time, weather, and apparel all matter. There are no guaranteed rare encounters.`}</p>${
+  return `<span class="eyebrow">${residents ? 'LITTLE LIVES, GROWING' : 'YOUR FIELD NOTES'}</span><h2 id="panel-title">${residents ? 'A home worth growing.' : 'Sixty stories in the water.'}</h2><p class="intro">${residents ? `${state.fish.length} residents · ${income(state).toFixed(2)} pearls / sec. Baby fish grow naturally; care upgrades improve income, add growth, and raise future release value.` : `${state.found.length} / ${SPECIES.length} species discovered. Bait, tackle, time, weather, and apparel all matter. Tap any discovered species to inspect it in 3D.`}</p>${
     residents
       ? ''
       : collectionView() +
@@ -735,7 +940,9 @@ function journal(residents = false) {
           ['all', 'All waters'],
           ['found', 'Found'],
           ['missing', 'Still to find'],
+          ['fresh', 'Freshwater'],
           ['salt', 'Saltwater'],
+          ['chronicles', 'Chronicles'],
         ]
           .map(
             ([id, name]) =>
@@ -746,7 +953,7 @@ function journal(residents = false) {
     .map(({f, r}) => {
       const known = !!r || state.found.includes(f.id),
         age = r ? growth(r) : 1;
-      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}"><div class="fish-thumb" data-thumb="${f.id}" data-unknown="${known ? 0 : 1}">${fishSvg(f, !known)}</div><h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}</div><div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? (state.records[f.id]?.best ? '<br>Best ' + fmtLength(state.records[f.id].best) : '<br>Not yet landed') : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet & nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : ''}</article>`;
+      return `<article class="fish-card ${known ? '' : 'unknown'}" style="--rarity:${RARITY_COLORS[f.rarity]}"><div class="fish-thumb" data-thumb="${f.id}" data-unknown="${known ? 0 : 1}">${fishSvg(f, !known)}</div><h3>${r?.nickname ? esc(r.nickname) : known ? f.name : 'Unwritten story'}</h3><div class="rarity">${RARITIES[f.rarity]}${r?.morph && MORPH_NAMES[r.morph] ? ` · ✧ ${MORPH_NAMES[r.morph]}` : ''}</div>${known ? `<p class="card-lore">${esc(f.note)}</p>` : ''}<div class="fish-stats">${r ? `${Math.round(age * 100)}% mature · care ${r.care}/3<br>Release ${releaseValue(r)} ◇` : REGIONS[f.region].name}${!r && known ? (state.records[f.id]?.best ? `<br>Caught ${state.records[f.id].count}× · Best ${fmtLength(state.records[f.id].best)}` : '<br>Discovered in sanctuary') : ''}</div>${r ? `<button class="secondary-button" data-inspect="${r.uid}">Meet &amp; nurture ↗</button><button class="secondary-button" data-release="${r.uid}">Release · +${releaseValue(r)} ◇</button>` : known ? `<button class="secondary-button" data-species="${f.id}">Inspect 3D ↗</button>` : ''}</article>`;
     })
     .join('')}</div>`;
 }
@@ -755,12 +962,26 @@ function inspect(uid) {
   world?.select?.(uid);
   openPanel('fish');
 }
+function inspectSpecies(id) {
+  selectedSpeciesId = id;
+  openPanel('species');
+}
+function speciesView() {
+  const f = SPECIES.find(x => x.id === selectedSpeciesId) || SPECIES[0],
+    rec = state.records[f.id] || {count: 0, best: 0},
+    reg = REGIONS[f.region];
+  return `<div class="fish-profile" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">FIELD NOTE · ${esc(reg.name.toUpperCase())}</span><h2 id="panel-title">${f.name}</h2><div class="rarity">${RARITIES[f.rarity]} · ${reg.detail}</div>${modelMarkup(f)}<p class="species-lore">“${esc(f.note)}”</p><div class="profile-stats"><div><strong>${rec.count}</strong><span>Times landed</span></div><div><strong>${rec.best ? fmtLength(rec.best) : '—'}</strong><span>Best length</span></div><div><strong>${(f.rate * 0.22).toFixed(2)} / s</strong><span>Base sanctuary rate</span></div></div><button class="text-button" id="back-journal">Back to field notes ↗</button></div>`;
+}
 function inspectView() {
   const r = state.fish.find(f => f.uid === selectedUID),
     f = SPECIES.find(f => f.id === r.id),
     age = growth(r),
-    cost = Math.ceil(f.value * (r.care + 1) * 2.3);
-  return `<div class="fish-profile" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A LIFE YOU CAN INVEST IN</span><h2 id="panel-title">${esc(r.nickname || f.name)}</h2><div class="rarity">${RARITIES[f.rarity]} · ${f.name}</div>${modelMarkup(f)}<div class="profile-stats"><div><strong>${fmtWeight(fishWeight(r))}</strong><span>Weight now</span></div><div><strong>${Math.round(age * 100)}%</strong><span>Mature</span></div><div><strong>${r.potential.toFixed(2)}×</strong><span>Potential</span></div></div><div class="collection-meter"><span style="width:${age * 100}%"></span></div><p>Care ${r.care}/3 · release value ${releaseValue(r)} pearls. Natural growth takes up to 45 minutes, modified by potential. Nurture sessions add two minutes of growth.</p><button class="secondary-button" id="upgrade-fish" ${r.care >= 3 || state.pearls < cost ? 'disabled' : ''}>${r.care >= 3 ? 'Care complete' : 'Care upgrade · ' + cost + ' ◇'}</button><label class="name-label" for="fish-nickname">A NAME, JUST FOR THEM</label><div class="name-row"><input id="fish-nickname" maxlength="24" value="${esc(r.nickname || '')}" placeholder="${f.name}"><button class="secondary-button" id="save-nickname">Save name</button></div><button class="text-button" id="back-residents">Meet the rest of your fish ↗</button></div>`;
+    currentLen = r.length * (0.64 + 0.36 * age),
+    cost = Math.ceil(f.value * (r.care + 1) * 2.3),
+    pairReady = canBreed(state, r.id),
+    bCost = breedCost(r.id),
+    maturePeers = state.fish.filter(x => x.id === r.id && growth(x) >= 0.85).length;
+  return `<div class="fish-profile" style="--rarity:${RARITY_COLORS[f.rarity]}"><span class="eyebrow">A LIFE YOU CAN INVEST IN</span><h2 id="panel-title">${esc(r.nickname || f.name)}</h2><div class="rarity">${RARITIES[f.rarity]} · ${f.name}${r.morph && MORPH_NAMES[r.morph] ? ` · ✧ ${MORPH_NAMES[r.morph]}` : ''}</div>${modelMarkup({...f, morph: r.morph})}<p class="species-lore">“${esc(f.note)}”</p><div class="profile-stats"><div><strong>${fmtWeight(fishWeight(r))}</strong><span>Weight (${fmtLength(currentLen)})</span></div><div><strong>${Math.round(age * 100)}%</strong><span>Mature</span></div><div><strong>${r.potential.toFixed(2)}×</strong><span>Potential</span></div></div><div class="collection-meter"><span style="width:${age * 100}%"></span></div><p>Care ${r.care}/3 · release value ${releaseValue(r)} pearls${r.morph ? ' (+30% morph income & +35% value)' : ''}. Keep 2 mature ${f.name} (${maturePeers}/2 ready) to spawn sanctuary offspring with a high chance of a rare iridescent morph.</p><div class="quality-options" style="justify-content:center"><button class="secondary-button" id="upgrade-fish" ${r.care >= 3 || state.pearls < cost ? 'disabled' : ''}>${r.care >= 3 ? 'Care complete' : 'Care upgrade · ' + cost + ' ◇'}</button><button class="secondary-button" id="breed-fish" ${!pairReady || state.pearls < bCost ? 'disabled' : ''}>${state.fish.length >= TANKS[state.tank].capacity ? 'Tank full' : pairReady ? 'Spawn sanctuary fry · ' + bCost + ' ◇' : 'Need 2 mature (85%+)'}</button></div><label class="name-label" for="fish-nickname">A NAME, JUST FOR THEM</label><div class="name-row"><input id="fish-nickname" maxlength="24" value="${esc(r.nickname || '')}" placeholder="${f.name}"><button class="secondary-button" id="save-nickname">Save name</button></div><button class="text-button" id="back-residents">Meet the rest of your fish ↗</button></div>`;
 }
 function characterView() {
   const swatch = (attr, colors, label) =>
@@ -778,28 +999,37 @@ function characterView() {
   return `<span class="eyebrow">YOUR ANGLER · A PERMANENT FIRST CHOICE</span><h2 id="panel-title">Meet the person by the water.</h2><p>Drag to turn them around. Shirts, hats, sunglasses, trousers, and shoes can be changed later at the market.</p><label class="name-label" for="character-name">NAME</label><input class="character-name" id="character-name" maxlength="24" value="${esc(creation.name)}"><div class="look-tabs" role="tablist">${tabs.map(([id, n]) => `<button role="tab" class="look-tab${creationTab === id ? ' chosen' : ''}" data-look-tab="${id}" aria-selected="${creationTab === id}">${n}</button>`).join('')}<button class="look-tab" id="random-look" aria-label="Random look">⟳ Surprise me</button></div>${body}<button class="primary-button" id="create-character">Begin my angler’s story ↗</button>`;
 }
 function helpView() {
-  return `<span class="eyebrow">THE LIVING WATER UPDATE · 1.5</span><h2 id="panel-title">Read the water. Earn the catch.</h2><div class="help-steps"><p><b>Cast & hook.</b> Hold and release to cast. Watch the float: small twitches are curious fish, a hard plunge is a bite. Not every cast gets a bite. Set the hook within the short bite window. Once a line is out, you can tap anywhere on the scene to hook and reel.</p><p><b>Fight & tension.</b> Common fish have a wide, slow timing window. Rarer fish have a narrower window and faster marker. Tap inside the glowing zone to reel; each pull brings the bobber closer. Misses raise tension and slack. Wait to lower tension, but take too long and the fish escapes. Overpowered tackle can snap. Let go to protect your rod. Stronger rods and lines are separate purchases.</p><p><b>Raise & invest.</b> Keeping a catch drops it into the aquarium. Baby fish grow, care upgrades improve income and value, and feeding costs 8 pearls for a small growth boost. There is no hunger penalty. Market purchases compete for your pearls. Buy bait once for unlimited casts; bait unlocks survive rebirth.</p><p><b>Your fixed angler.</b> Drag in 3D mode to orbit; switch to first person to see your hands. A landed fish moves to the front camera and hangs from the hook. Drag the scene to turn it.</p><p><b>Shortcuts.</b> Space or Enter casts and reels. 1–4 switch between the lake, aquarium, bait shop and field notes. C swaps the camera.</p><p><b>World conditions.</b> A 20-minute world day and changing simulated weather affect odds. Catfish and some deep-water fish favor night; trout favor dawn. These are game-balance rules, not a real-world forecast.</p></div><div class="audio-options"><button class="secondary-button" id="options-sound">${state.audioOn ? 'Sound on · tap to mute' : 'Sound off · tap to enable'}</button><div class="quality-options">${[
+  return `<span class="eyebrow">SANCTUARY CHRONICLES UPDATE · V${VERSION}</span><h2 id="panel-title">Read the water. Earn the catch.</h2><div class="help-steps"><p><b>Cast &amp; hook.</b> Hold and release to cast. Watch the float: small twitches are curious fish, a hard plunge is a bite. Not every cast gets a bite. Set the hook within the short bite window. Once a line is out, you can tap anywhere on the scene to hook and reel.</p><p><b>Fight, sweet-spot &amp; rhythm.</b> Tap inside the glowing zone to reel; hitting the golden center triggers a <b>Perfect Pull</b> (+28% distance, lower tension). Stringing together <b>3 hits in a row</b> fills the rhythm pips and triggers a <b>Steady Rhythm</b> burst that calms the fish and eases line tension. Watch the fish’s posture—reeling while it glides/rests is gentler than pulling while it darts.</p><p><b>Raise &amp; invest.</b> Keeping a catch drops it into the aquarium. Baby fish grow, care upgrades improve income and value, and feeding costs 8 pearls for a growth boost. Check Milo’s Bait Shop for his rotating <b>Daily Tide Request</b> (1.5× release value + bonus pearls).</p><p><b>Story Chronicles &amp; Milestones.</b> Follow the 8-chapter <b>Sanctuary Chronicles</b> on the lake HUD (or in Field Notes) for narrative progression and permanent keepsake bonuses, or toggle to classic Catch Milestones.</p><p><b>Shortcuts.</b> Space or Enter casts and reels. 1–4 switch between the lake, aquarium, bait shop and field notes. C swaps the camera.</p><p><b>World conditions.</b> A 20-minute world day and changing simulated weather affect odds. Catfish and some deep-water fish favor night; trout favor dawn.</p></div><div class="eyebrow section-space">VIDEO SETTINGS · GRAPHICAL FIDELITY</div><div class="quality-options video-tiers">${[
+    ['ultra-low', 'Ultra Low'],
+    ['low', 'Low'],
+    ['medium', 'Medium'],
+    ['high', 'High'],
+    ['very-high', 'Very High'],
+    ['ultra', 'Ultra'],
+  ]
+    .map(
+      ([id, name]) =>
+        `<button class="secondary-button" data-quality="${id}" ${state.quality === id ? 'disabled' : ''}>${name}</button>`,
+    )
+    .join('')}</div><div class="eyebrow section-space">RAY-TRACING · PLANAR REFLECTIONS, RTAO &amp; SUBSURFACE SCATTERING</div><div class="quality-options">${[
+    ['auto', 'Auto (High–Ultra)'],
+    ['on', 'Ray-Tracing On'],
+    ['off', 'Ray-Tracing Off'],
+  ]
+    .map(
+      ([id, name]) =>
+        `<button class="secondary-button" data-rt="${id}" ${(state.rayTracing || 'auto') === id ? 'disabled' : ''}>${name}</button>`,
+    )
+    .join('')}</div><div class="eyebrow section-space">AUDIO &amp; SOUNDSCAPE</div><div class="audio-options"><div class="quality-options"><button class="secondary-button" id="options-sound">${state.audioOn ? 'Water &amp; FX on · tap to mute' : 'Sound muted · tap to enable'}</button><button class="secondary-button" id="options-music">${state.musicOn !== false ? 'Ambient harp on · tap to mute' : 'Ambient harp off · tap to enable'}</button></div><div class="quality-options">${[
     [0.15, 'Quiet'],
     [0.3, 'Balanced'],
     [0.5, 'Full'],
   ]
     .map(
       ([v, n]) =>
-        `<button class="secondary-button" data-volume="${v}" ${state.volume === v ? 'disabled' : ''}>${n} sound</button>`,
+        `<button class="secondary-button" data-volume="${v}" ${state.volume === v ? 'disabled' : ''}>${n} volume</button>`,
     )
-    .join('')}</div><button class="secondary-button" id="options-units">${imperial() ? 'Imperial · lb, in, °F · tap for metric' : 'Metric · kg, cm, °C · tap for imperial'}</button><button class="secondary-button" id="options-haptics">${state.haptics === false ? 'Vibration off · tap to enable' : 'Vibration on · tap to turn off'}</button></div><div class="quality-options">${[
-    ['battery', 'Battery · 30 fps'],
-    ['balanced', 'Balanced · 45 fps'],
-    ['crisp', 'Crisp · 60 fps'],
-    ['ultra', 'Ultra · full detail'],
-  ]
-    .map(
-      ([id, name]) =>
-        `<button class="secondary-button" data-quality="${id}" ${state.quality === id ? 'disabled' : ''}>${name}</button>`,
-    )
-    .join(
-      '',
-    )}</div><div class="install-note"><strong>Your pocket sanctuary.</strong><p>Add this link to your iPhone home screen in Safari. <span id="offline-state">${offlineReady ? 'Ready for offline play.' : 'Offline preparation runs when supported.'}</span> Progress saves on this device; export a backup before moving devices.</p></div><div class="help-footer"><button class="secondary-button" id="start-playing">Back to the water ↗</button><button class="text-button" id="return-title">Title screen</button><button class="text-button" id="export-save">Export progress</button><label class="text-button">Import progress<input id="import-save" type="file" accept="application/json,.json" hidden></label></div>`;
+    .join('')}</div><div class="quality-options"><button class="secondary-button" id="options-units">${imperial() ? 'Imperial · lb, in, °F · tap for metric' : 'Metric · kg, cm, °C · tap for imperial'}</button><button class="secondary-button" id="options-haptics">${state.haptics === false ? 'Vibration off · tap to enable' : 'Vibration on · tap to turn off'}</button></div></div><div class="install-note"><strong>Your pocket sanctuary.</strong><p>Add this link to your iPhone home screen in Safari. <span id="offline-state">${offlineReady ? 'Ready for offline play.' : 'Offline preparation runs when supported.'}</span> Progress saves on this device; export a backup before moving devices.</p></div><div class="help-footer"><button class="secondary-button" id="start-playing">Back to the water ↗</button><button class="text-button" id="return-title">Title screen</button><button class="text-button" id="export-save">Export progress</button><label class="text-button">Import progress<input id="import-save" type="file" accept="application/json,.json" hidden></label></div>`;
 }
 function openPanel(type) {
   if (type === 'journal') freshDiscovery = false;
@@ -832,20 +1062,27 @@ function openPanel(type) {
         ? catchView()
         : type === 'fish'
           ? inspectView()
-          : type === 'character'
-            ? characterView()
-            : type === 'help'
-              ? helpView()
-              : type === 'extras'
-                ? extrasView()
-                : type === 'newgame'
-                  ? newGameView()
-                  : journal(type === 'residents');
+          : type === 'species'
+            ? speciesView()
+            : type === 'character'
+              ? characterView()
+              : type === 'help'
+                ? helpView()
+                : type === 'extras'
+                  ? extrasView()
+                  : type === 'newgame'
+                    ? newGameView()
+                    : journal(type === 'residents');
   bindPanel();
-  if (type === 'fish')
+  if (type === 'fish') {
+    const res = state.fish.find(x => x.uid === selectedUID);
+    const sp = SPECIES.find(f => f.id === res.id);
+    showPreview($('#model-preview'), {...sp, morph: res.morph});
+  }
+  if (type === 'species')
     showPreview(
       $('#model-preview'),
-      SPECIES.find(f => f.id === state.fish.find(x => x.uid === selectedUID).id),
+      SPECIES.find(f => f.id === selectedSpeciesId) || SPECIES[0],
     );
   const first = $('#panel-content button:not(:disabled)') || $('#close-panel');
   // Focus for keyboard users without scrolling long panels away from their heading.
@@ -904,7 +1141,31 @@ function bindPanel() {
     showKeeper($('#keeper-stage'), keeperWave);
     keeperWave = false;
   }
-  if (panelType === 'extras') $('#extra-back').onclick = () => closePanel();
+  all('[data-claim-story]').forEach(
+    b =>
+      (b.onclick = () => {
+        const ch = STORY_CHAPTERS[state.storyChapter || 0];
+        const reward = claimStoryChapter(state);
+        if (reward && ch) {
+          save();
+          hud();
+          sound.play('story');
+          openPanel(panelType);
+          toast(`${ch.title} complete! +${reward} ◇ & permanent sanctuary keepsake bonus.`);
+        }
+      }),
+  );
+  if (panelType === 'extras') {
+    $('#extra-back').onclick = () => closePanel();
+    const toggleBtn = $('#extra-toggle-story');
+    if (toggleBtn)
+      toggleBtn.onclick = () => {
+        state.storyMode = state.storyMode === false;
+        save();
+        hud();
+        openPanel('extras');
+      };
+  }
   if (panelType === 'newgame') {
     $('#cancel-new').onclick = () => closePanel();
     $('#confirm-new').onclick = () => {
@@ -915,11 +1176,18 @@ function bindPanel() {
         audioOn: state.audioOn,
         volume: state.volume,
         haptics: state.haptics,
+        units: state.units,
       };
       Object.keys(state).forEach(k => delete state[k]);
       Object.assign(state, clean);
       pending = null;
       encounter = null;
+      freshDiscovery = false;
+      confirmRebirth = false;
+      creation = {name: 'Angler', skin: 0, hair: 0, style: 0, eyes: 0, facial: 0};
+      creationTab = 'face';
+      world?.setRegion(0);
+      world?.setMood?.();
       world?.refreshFish(SPECIES);
       world?.refreshCharacter?.();
       save();
@@ -1034,9 +1302,11 @@ function bindPanel() {
           return;
         }
         if (rebirth(state)) {
+          confirmRebirth = false;
           save();
           world?.refreshFish(SPECIES);
           world?.setRegion(0);
+          world?.setMood?.();
           world?.refreshCharacter?.();
           closePanel();
           setView('lake');
@@ -1056,6 +1326,7 @@ function bindPanel() {
           openPanel('journal');
         }),
     );
+    all('[data-species]').forEach(b => (b.onclick = () => inspectSpecies(b.dataset.species)));
     const c = $('#claim-collection');
     if (c)
       c.onclick = () => {
@@ -1066,6 +1337,9 @@ function bindPanel() {
           sound.play('coin');
         }
       };
+  }
+  if (panelType === 'species') {
+    $('#back-journal').onclick = () => openPanel('journal');
   }
   if (panelType === 'residents') {
     all('[data-inspect]').forEach(b => (b.onclick = () => inspect(b.dataset.inspect)));
@@ -1080,7 +1354,9 @@ function bindPanel() {
           const i = state.fish.findIndex(f => f.uid === b.dataset.release);
           if (i < 0) return;
           accrue(state);
-          state.pearls += releaseValue(state.fish[i]);
+          const val = releaseValue(state.fish[i]);
+          state.pearls += val;
+          state.lifetimeEarned = (state.lifetimeEarned || 0) + val;
           state.fish.splice(i, 1);
           save();
           hud();
@@ -1106,10 +1382,33 @@ function bindPanel() {
         sound.play('coin');
       }
     };
+    const breedBtn = $('#breed-fish');
+    if (breedBtn)
+      breedBtn.onclick = () => {
+        const r = state.fish.find(f => f.uid === selectedUID);
+        if (!r) return;
+        const fry = breedResidents(state, r.id);
+        if (fry) {
+          save();
+          hud();
+          world?.refreshFish(SPECIES);
+          world?.arrive?.(fry.uid);
+          sound.play('breed');
+          selectedUID = fry.uid;
+          openPanel('fish');
+          const sp = SPECIES.find(x => x.id === fry.id);
+          toast(
+            fry.morph
+              ? `✧ Rare ${MORPH_NAMES[fry.morph]} ${sp.name} fry born in your sanctuary!`
+              : `A new ${sp.name} fry has hatched in your sanctuary!`,
+          );
+        }
+      };
   }
   if (panelType === 'help') {
     $('#options-sound').onclick = async () => {
-      state.audioOn = await sound.toggle();
+      const next = !state.audioOn;
+      state.audioOn = await sound.enable(next);
       updateSoundButton(state.audioOn);
       save();
       openPanel('help');
@@ -1145,10 +1444,27 @@ function bindPanel() {
       world?.setTitle?.(true);
       sound.setPlace?.('ocean');
     };
+    const musicBtn = $('#options-music');
+    if (musicBtn)
+      musicBtn.onclick = () => {
+        state.musicOn = state.musicOn === false;
+        sound.setMusic?.(state.musicOn);
+        save();
+        openPanel('help');
+      };
     all('[data-quality]').forEach(
       b =>
         (b.onclick = () => {
           state.quality = b.dataset.quality;
+          world?.setQuality?.();
+          save();
+          openPanel('help');
+        }),
+    );
+    all('[data-rt]').forEach(
+      b =>
+        (b.onclick = () => {
+          state.rayTracing = b.dataset.rt;
           world?.setQuality?.();
           save();
           openPanel('help');
@@ -1227,7 +1543,7 @@ function tick(now) {
   const dt = Math.min(0.1, (now - lastFrame) / 1000);
   lastFrame = now;
   if (document.hidden) return;
-  sound.ambience?.(dt, inTitle ? 3 : state.region, conditions.phase);
+  sound.ambience?.(dt, inTitle ? 3 : state.region, conditions.phase, conditions.weather, conditions.windKmh);
   if (stage === 'charging') {
     charge = 0.5 - 0.5 * Math.cos((now - chargeStart) * 0.0024);
     world?.setCharge?.(charge);
@@ -1248,11 +1564,15 @@ function tick(now) {
     const outcome = stepFight(encounter, state, dt);
     world?.setTension?.(encounter.tension);
     sound.tension?.(encounter.tension);
+    $('#sweet-zone').classList.toggle('resting', encounter.posture === 'resting');
+    $('#sweet-zone').classList.toggle('darting', encounter.posture === 'darting');
     $('#tension-fill').style.width = Math.min(100, encounter.tension * 100) + '%';
     $('#tension-fill').style.background =
       encounter.tension > 0.8 ? '#d48c78' : encounter.tension > 0.58 ? '#d4b77d' : '#87b6a0';
     $('#distance-fill').style.width = Math.max(0, (1 - encounter.progress) * 100) + '%';
-    $('#fight-distance').textContent = Math.round((1 - encounter.progress) * 100) + '% distance';
+    const postureTag =
+      encounter.posture === 'resting' ? ' · gliding' : encounter.posture === 'darting' ? ' · darting' : '';
+    $('#fight-distance').textContent = Math.round((1 - encounter.progress) * 100) + '% distance' + postureTag;
     if (outcome) fail(outcome);
   }
   if (stage === 'landing' && now >= waitUntil) {
@@ -1274,6 +1594,8 @@ function tick(now) {
 requestAnimationFrame(tick);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
+    pointerId = null;
+    if (stage === 'charging') setStage('idle');
     if (stage === 'reeling' || stage === 'bite') fail('escaped');
     sound.pause();
   } else {

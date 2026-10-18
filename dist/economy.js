@@ -478,7 +478,7 @@ export const SPECIES = [
     size: 0.85,
     region: 3,
     shape: 'round',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Bright as a little lantern tucked among the harbour pilings.',
   },
   {
     id: 'wrasse',
@@ -491,7 +491,7 @@ export const SPECIES = [
     size: 1,
     region: 3,
     shape: 'slim',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Slips through the swaying eelgrass like a ribbon of sea-glass.',
   },
   {
     id: 'goby',
@@ -504,7 +504,7 @@ export const SPECIES = [
     size: 0.75,
     region: 3,
     shape: 'catfish',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Watches the tide come and go from a doorstep of warm shell sand.',
   },
   {
     id: 'seabass',
@@ -517,7 +517,7 @@ export const SPECIES = [
     size: 1.5,
     region: 3,
     shape: 'trout',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Patrols the quiet shadow beneath the stone quay at slack water.',
   },
   {
     id: 'tang',
@@ -530,7 +530,7 @@ export const SPECIES = [
     size: 1.1,
     region: 3,
     shape: 'disc',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Carries a piece of the summer sky into the harbour shallows.',
   },
   {
     id: 'mullet',
@@ -543,7 +543,7 @@ export const SPECIES = [
     size: 1.3,
     region: 3,
     shape: 'slim',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Leaps once in the morning hush, leaving rings across the reach.',
   },
   {
     id: 'pompano',
@@ -556,7 +556,7 @@ export const SPECIES = [
     size: 1.4,
     region: 3,
     shape: 'round',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Catches the low afternoon light like a spun gold coin.',
   },
   {
     id: 'trigger',
@@ -569,7 +569,7 @@ export const SPECIES = [
     size: 1.3,
     region: 3,
     shape: 'angel',
-    note: 'A saltwater wanderer from the sheltered harbor.',
+    note: 'Curious and unhurried, turning shells along the harbour floor.',
   },
   {
     id: 'reefbutter',
@@ -582,7 +582,7 @@ export const SPECIES = [
     size: 1.15,
     region: 4,
     shape: 'angel',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'Flits from coral branch to branch like a sunbeam with fins.',
   },
   {
     id: 'parrot',
@@ -595,7 +595,7 @@ export const SPECIES = [
     size: 1.55,
     region: 4,
     shape: 'round',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'Dressed in lagoon turquoise and coral pink, grazing the sunlit reef.',
   },
   {
     id: 'lion',
@@ -608,7 +608,7 @@ export const SPECIES = [
     size: 1.4,
     region: 4,
     shape: 'sail',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'Drifts through the warm current in a slow, regal plume of feathers.',
   },
   {
     id: 'anthias',
@@ -621,7 +621,7 @@ export const SPECIES = [
     size: 0.9,
     region: 4,
     shape: 'slim',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'A living spark of sunset hovering above the staghorn gardens.',
   },
   {
     id: 'moorish',
@@ -634,7 +634,7 @@ export const SPECIES = [
     size: 1.2,
     region: 4,
     shape: 'angel',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'Trails a slender white pennant through the clearest water on the reef.',
   },
   {
     id: 'mandarinsalt',
@@ -647,7 +647,7 @@ export const SPECIES = [
     size: 1,
     region: 4,
     shape: 'dragon',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'Every scale looks hand-painted by a very patient tide.',
   },
   {
     id: 'banner',
@@ -660,7 +660,7 @@ export const SPECIES = [
     size: 1.4,
     region: 4,
     shape: 'angel',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'Its long dorsal ribbon waves like a welcoming sail in the lagoon.',
   },
   {
     id: 'reefking',
@@ -673,7 +673,7 @@ export const SPECIES = [
     size: 1.65,
     region: 4,
     shape: 'angel',
-    note: 'A saltwater wanderer from the sunlit coral gardens.',
+    note: 'Sovereign of the coral sanctuary, wearing violet and burnished gold.',
   },
   {
     id: 'mackerel',
@@ -686,7 +686,7 @@ export const SPECIES = [
     size: 1.6,
     region: 5,
     shape: 'trout',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'Reads the open swell in shimmering bands of pelagic silver-blue.',
   },
   {
     id: 'mahi',
@@ -699,7 +699,7 @@ export const SPECIES = [
     size: 2,
     region: 5,
     shape: 'sail',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'A flash of meadow green and sunlit gold racing the offshore wind.',
   },
   {
     id: 'tuna',
@@ -712,7 +712,7 @@ export const SPECIES = [
     size: 2.25,
     region: 5,
     shape: 'trout',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'Built for the endless horizon, tireless and bright as polished steel.',
   },
   {
     id: 'wahoo',
@@ -725,7 +725,7 @@ export const SPECIES = [
     size: 2,
     region: 5,
     shape: 'slim',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'Slices the deep cobalt rollers faster than a passing squall.',
   },
   {
     id: 'sailfish',
@@ -738,7 +738,7 @@ export const SPECIES = [
     size: 2.4,
     region: 5,
     shape: 'sail',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'Raises a tall indigo sail where the sky and the deep blue meet.',
   },
   {
     id: 'marlin',
@@ -751,7 +751,7 @@ export const SPECIES = [
     size: 2.8,
     region: 5,
     shape: 'sword',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'A legend of the outer swells, crowned with a spear of starlight.',
   },
   {
     id: 'oceanopal',
@@ -764,7 +764,7 @@ export const SPECIES = [
     size: 1.5,
     region: 5,
     shape: 'disc',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'Glows softly in the deep water like moonstone under a gentle wave.',
   },
   {
     id: 'leviathan',
@@ -777,7 +777,7 @@ export const SPECIES = [
     size: 3,
     region: 5,
     shape: 'dragon',
-    note: 'A saltwater wanderer from the deep blue beyond the coast.',
+    note: 'When it passes beneath the hull, the whole ocean seems to hold its breath.',
   },
 ];
 export const RARITIES = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary'];
@@ -859,6 +859,149 @@ export const COLLECTION_GOALS = [
   {target: 48, reward: 8000, name: 'Beyond the harbor'},
   {target: 60, reward: 15000, name: 'An ocean of stories'},
 ];
+
+// Story Mode: "The Sanctuary Chronicles" — a narrative-led journey from Willow Lake to the Open Blue.
+// Each chapter grants a pearl reward and a permanent +3% sanctuary income & +2% luck keepsake bonus.
+export const STORY_CHAPTERS = [
+  {
+    id: 'ch1',
+    eyebrow: 'CHAPTER I · THE OLD PIER',
+    title: 'First Rings on Willow Lake',
+    speaker: 'Milo, Bait Keeper',
+    quote: '“The old conservatory glass has been quiet for a long time. Cast a line from the willow planks and bring home a few neighbours.”',
+    objective: 'Land 2 fish and welcome 3 residents into your aquarium',
+    reward: 40,
+    progress: s => ({
+      current: Math.min(2, s.total) + Math.min(3, s.fish.length),
+      target: 5,
+      label: `${Math.min(2, s.total)}/2 landed · ${Math.min(3, s.fish.length)}/3 residents`,
+    }),
+  },
+  {
+    id: 'ch2',
+    eyebrow: 'CHAPTER II · REEDS & PATIENCE',
+    title: 'The Art of a Gentle Hand',
+    speaker: 'Milo, Bait Keeper',
+    quote: '“Anyone can haul a line, friend. A true sanctuary keeper learns the rhythm of the water and tends the small lives in their care.”',
+    objective: 'Discover 5 species and nurture or feed your aquarium fish',
+    reward: 95,
+    progress: s => {
+      const cared = s.fish.some(f => (f.care || 0) > 0) || (s.fedCount || 0) > 0 ? 1 : 0;
+      return {
+        current: Math.min(5, s.found.length) + cared,
+        target: 6,
+        label: `${Math.min(5, s.found.length)}/5 species · ${cared ? 'sanctuary tended' : 'feed or care for a fish'}`,
+      };
+    },
+  },
+  {
+    id: 'ch3',
+    eyebrow: 'CHAPTER III · MOVING WATER',
+    title: 'Where Fernwater Sings',
+    speaker: 'Milo’s Field Ledger',
+    quote: '“Follow the mossy cascade upstream. The current carries rosewater trout and discus that only bite for an angler with a supple rod.”',
+    objective: 'Unlock Fernwater Creek and discover 3 creek species',
+    reward: 240,
+    progress: s => {
+      const creekFound = s.found.filter(id => SPECIES.find(f => f.id === id)?.region === 1).length;
+      const unlocked = s.regions.includes(1) ? 1 : 0;
+      return {
+        current: unlocked + Math.min(3, creekFound),
+        target: 4,
+        label: `${unlocked ? 'Creek unlocked' : 'Unlock Fernwater Creek'} · ${Math.min(3, creekFound)}/3 creek species`,
+      };
+    },
+  },
+  {
+    id: 'ch4',
+    eyebrow: 'CHAPTER IV · LANTERNS ON THE GLASS',
+    title: 'A Growing Sanctuary',
+    speaker: 'Conservatory Notes',
+    quote: '“When you give a fish room to wander and a place to hide among river plants or stone, the whole room begins to hum with quiet life.”',
+    objective: 'Upgrade your aquarium or place decor, and land 15 fish',
+    reward: 450,
+    progress: s => {
+      const upgraded = s.tank > 0 || s.decor.length > 0 || s.filter > 0 ? 1 : 0;
+      return {
+        current: upgraded + Math.min(15, s.total),
+        target: 16,
+        label: `${upgraded ? 'Sanctuary enhanced' : 'Upgrade tank, filter, or decor'} · ${Math.min(15, s.total)}/15 landed`,
+      };
+    },
+  },
+  {
+    id: 'ch5',
+    eyebrow: 'CHAPTER V · BIOLUMINESCENCE',
+    title: 'Whispers of Starlit Cove',
+    speaker: 'Milo, Bait Keeper',
+    quote: '“Deep in the pines lies a pool where crystal shards glow beneath the surface. Go at dusk or night—the rarest swimmers wake with the stars.”',
+    objective: 'Unlock Starlit Cove and discover 3 cove species',
+    reward: 900,
+    progress: s => {
+      const coveFound = s.found.filter(id => SPECIES.find(f => f.id === id)?.region === 2).length;
+      const unlocked = s.regions.includes(2) ? 1 : 0;
+      return {
+        current: unlocked + Math.min(3, coveFound),
+        target: 4,
+        label: `${unlocked ? 'Cove unlocked' : 'Unlock Starlit Cove'} · ${Math.min(3, coveFound)}/3 cove species`,
+      };
+    },
+  },
+  {
+    id: 'ch6',
+    eyebrow: 'CHAPTER VI · THE SALT WIND',
+    title: 'Out Beyond the Quay',
+    speaker: 'Harbourmaster’s Log',
+    quote: '“The cedar skiff is moored and waiting at Harbor Reach. Out here the tide rolls in from the open sea, and the lighthouse keeps watch after dark.”',
+    objective: 'Unlock Harbor Reach and discover 4 saltwater species',
+    reward: 1800,
+    progress: s => {
+      const saltFound = s.found.filter(id => (SPECIES.find(f => f.id === id)?.region || 0) >= 3).length;
+      const unlocked = s.regions.includes(3) ? 1 : 0;
+      return {
+        current: unlocked + Math.min(4, saltFound),
+        target: 5,
+        label: `${unlocked ? 'Harbor unlocked' : 'Unlock Harbor Reach'} · ${Math.min(4, saltFound)}/4 sea species`,
+      };
+    },
+  },
+  {
+    id: 'ch7',
+    eyebrow: 'CHAPTER VII · GARDENS OF TURQUOISE',
+    title: 'The Coral Crown',
+    speaker: 'Conservatory Notes',
+    quote: '“At Sunbreak Reef the water is so clear the boat seems to float on air. Only strong braided line and patient rhythm will bring a reef king home.”',
+    objective: 'Unlock Sunbreak Reef and discover 38 total species',
+    reward: 4200,
+    progress: s => {
+      const unlocked = s.regions.includes(4) ? 1 : 0;
+      return {
+        current: unlocked + Math.min(38, s.found.length),
+        target: 39,
+        label: `${unlocked ? 'Reef unlocked' : 'Unlock Sunbreak Reef'} · ${Math.min(38, s.found.length)}/38 species`,
+      };
+    },
+  },
+  {
+    id: 'ch8',
+    eyebrow: 'CHAPTER VIII · THE HORIZON',
+    title: 'Where the Water Meets the Sky',
+    speaker: 'Milo, Bait Keeper',
+    quote: '“No land in sight—only the deep blue swell and the greatest stories in the sea. Whatever you find out there, you’ve earned every ripple.”',
+    objective: 'Unlock The Open Blue and discover a Legendary species',
+    reward: 9500,
+    progress: s => {
+      const unlocked = s.regions.includes(5) ? 1 : 0;
+      const hasLegend = s.found.some(id => SPECIES.find(f => f.id === id)?.rarity === 4) ? 1 : 0;
+      return {
+        current: unlocked + hasLegend,
+        target: 2,
+        label: `${unlocked ? 'Open Blue reached' : 'Unlock The Open Blue'} · ${hasLegend ? 'Legendary found' : 'Find a Legendary fish'}`,
+      };
+    },
+  },
+];
+
 export const KEY = 'stillwater.sanctuary.v1';
 export function cleanName(v) {
   return typeof v === 'string'
@@ -890,11 +1033,20 @@ export function freshState(now = Date.now()) {
     region: 0,
     decor: [],
     quest: 0,
+    storyChapter: 0,
+    storyMode: true,
+    fedCount: 0,
+    perfectPulls: 0,
+    tidesCompleted: 0,
+    lastTideDay: -1,
     last: now,
     mood: 0,
     records: {},
     collectionClaimed: 0,
-    quality: 'balanced',
+    quality: 'high',
+    rayTracing: 'auto',
+    musicOn: true,
+    bredCount: 0,
     bait: 0,
     ownedBaits: ['bare'],
     baitStock: {},
@@ -922,22 +1074,31 @@ export function fishWeight(f, now = Date.now()) {
     cm = f.length * (0.64 + 0.36 * age);
   return Math.max(0.01, Math.pow(cm, 3) * 0.000012 * (sp?.shape === 'disc' ? 1.5 : sp?.shape === 'eel' ? 0.6 : 1));
 }
+export const QUALITY_TIERS = ['ultra-low', 'low', 'medium', 'high', 'very-high', 'ultra'];
+export const MORPH_NAMES = {pearl: 'Pearl Iridescent', starlight: 'Starlight Shimmer', golden: 'Sunlit Gold'};
 export function releaseValue(f, now = Date.now()) {
-  const sp = SPECIES.find(x => x.id === f.id);
+  const sp = SPECIES.find(x => x.id === f.id),
+    morphMult = f.morph && MORPH_NAMES[f.morph] ? 1.35 : 1;
   return Math.floor(
-    (sp?.value || 0) * (0.55 + growth(f, now) * 1.55) * (f.potential || 1) * (1 + (f.care || 0) * 0.32),
+    (sp?.value || 0) * (0.55 + growth(f, now) * 1.55) * (f.potential || 1) * (1 + (f.care || 0) * 0.32) * morphMult,
   );
 }
 export function income(s, now = Date.now()) {
+  const storyBonus = 1 + (s.storyChapter || 0) * 0.03;
   return (
     s.fish.reduce(
       (a, f) =>
-        a + (SPECIES.find(x => x.id === f.id)?.rate || 0) * (0.45 + 0.55 * growth(f, now)) * (1 + (f.care || 0) * 0.25),
+        a +
+        (SPECIES.find(x => x.id === f.id)?.rate || 0) *
+          (0.45 + 0.55 * growth(f, now)) *
+          (1 + (f.care || 0) * 0.25) *
+          (f.morph && MORPH_NAMES[f.morph] ? 1.3 : 1),
       0,
     ) *
     0.22 *
     (1 + s.decor.length * 0.1 + s.filter * 0.15) *
-    (1 + s.rebirth * 0.25)
+    (1 + s.rebirth * 0.25) *
+    storyBonus
   );
 }
 export function accrue(s, now = Date.now()) {
@@ -953,15 +1114,19 @@ export function sanitize(raw, now = Date.now()) {
   s.version = 3;
   s.audioOn = s.audioOn !== false;
   s.haptics = s.haptics !== false;
+  s.storyMode = s.storyMode !== false;
   s.units = s.units === 'imperial' ? 'imperial' : 'metric';
   s.volume = Number.isFinite(s.volume) ? Math.max(0, Math.min(0.6, s.volume)) : 0.3;
-  for (const k of ['pearls', 'bank', 'total', 'attempts', 'lifetimeEarned']) s[k] = n(s[k], k === 'pearls' ? 60 : 0);
+  for (const k of ['pearls', 'bank', 'total', 'attempts', 'lifetimeEarned', 'fedCount', 'perfectPulls', 'tidesCompleted'])
+    s[k] = n(s[k], k === 'pearls' ? 60 : 0);
+  s.lastTideDay = Number.isInteger(s.lastTideDay) ? s.lastTideDay : -1;
   for (const [k, max] of [
     ['rod', RODS.length - 1],
     ['line', LINES.length - 1],
     ['tank', 3],
     ['filter', 3],
     ['quest', QUESTS.length],
+    ['storyChapter', STORY_CHAPTERS.length],
     ['mood', 2],
     ['boat', 2],
     ['rebirth', 3],
@@ -982,6 +1147,7 @@ export function sanitize(raw, now = Date.now()) {
       bornAt: Math.min(now, n(f.bornAt, now)),
       potential: Math.max(0.8, Math.min(1.6, n(f.potential, 1))),
       care: Math.min(3, Math.floor(n(f.care))),
+      ...(f.morph && MORPH_NAMES[f.morph] ? {morph: f.morph} : {}),
     }));
   s.found = [...new Set((Array.isArray(s.found) ? s.found : []).filter(id => SPECIES.some(x => x.id === id)))];
   s.decor = [...new Set((Array.isArray(s.decor) ? s.decor : []).filter(id => DECOR.some(x => x.id === id)))];
@@ -992,7 +1158,12 @@ export function sanitize(raw, now = Date.now()) {
     ]),
   ];
   s.region = s.regions.includes(s.region) ? s.region : 0;
-  s.quality = ['battery', 'balanced', 'crisp', 'ultra'].includes(s.quality) ? s.quality : 'balanced';
+  const qMap = {battery: 'low', balanced: 'medium', crisp: 'high'};
+  if (qMap[s.quality]) s.quality = qMap[s.quality];
+  s.quality = QUALITY_TIERS.includes(s.quality) ? s.quality : 'high';
+  s.rayTracing = ['auto', 'on', 'off'].includes(s.rayTracing) ? s.rayTracing : 'auto';
+  s.musicOn = s.musicOn !== false;
+  s.bredCount = n(s.bredCount, 0);
   s.cameraMode = s.cameraMode === 'first' ? 'first' : 'third';
   const rec = s.records && typeof s.records === 'object' ? s.records : {};
   s.records = {};
@@ -1059,23 +1230,44 @@ export function apparelLuck(s) {
 export function effectiveRod(s) {
   return RODS[s.rodBroken ? 0 : s.rod];
 }
+// Milo's rotating Tide Request: one species from the player's unlocked waters each 20-minute world day.
+export function dailyRequest(s, now = Date.now()) {
+  const day = Math.floor(now / 1200000),
+    unlocked = Array.isArray(s.regions) && s.regions.length ? s.regions : [0],
+    pool = SPECIES.filter(f => unlocked.includes(f.region) && f.rarity <= Math.min(3, 1 + Math.floor(s.rod * 0.7)));
+  const pickPool = pool.length ? pool : SPECIES.filter(f => f.region === 0);
+  const hash = Math.abs(Math.sin(day * 97.13 + unlocked.length * 19.7) * 43758.5453) % 1;
+  const species = pickPool[Math.floor(hash * pickPool.length)] || SPECIES[0];
+  const bonus = 35 + species.rarity * 30 + species.region * 15;
+  return {
+    day,
+    species,
+    region: REGIONS[species.region],
+    bonus,
+    done: s.lastTideDay === day,
+  };
+}
 export function rollFish(s, rng = Math.random, conditions = {rarity: 1, phase: 'day', weather: 'clear'}) {
   const salt = REGIONS[s.region].habitat === 'salt',
     pool = SPECIES.filter(f => (salt ? f.region >= 3 && f.region <= s.region : f.region < 3 && f.region <= s.region));
   const b = BAITS[s.bait] || BAITS[0];
-  const luck = effectiveRod(s).luck + b.luck + apparelLuck(s) + s.rebirth * 0.12;
+  const luck = effectiveRod(s).luck + b.luck + apparelLuck(s) + s.rebirth * 0.12 + (s.storyChapter || 0) * 0.02;
   const weights = [60, 24, 7, 1, 0.07];
+  const req = dailyRequest(s);
   const picks = pool.map(f => {
     const nocturnal = ['catfish', 'eel'].includes(f.shape) || /midnight|star|ghost|celestial/i.test(f.id);
     const time =
       conditions.phase === 'night' && nocturnal ? 1.8 : conditions.phase === 'dawn' && f.shape === 'trout' ? 1.8 : 1;
+    // Slight nudge toward Milo's active Tide Request if fishing in its home water.
+    const tideBoost = !req.done && req.species.id === f.id ? 1.25 : 1;
     return {
       f,
       w:
         weights[f.rarity] *
         Math.pow(1 + luck * 0.5, f.rarity) *
         Math.pow(conditions.rarity || 1, f.rarity * 0.45) *
-        time,
+        time *
+        tideBoost,
     };
   });
   let r = rng() * picks.reduce((a, p) => a + p.w, 0),
@@ -1089,6 +1281,11 @@ export function rollFish(s, rng = Math.random, conditions = {rarity: 1, phase: '
   }
   const baby = rng() < 0.36,
     base = (7 + sp.size * 8 + rng() * sp.size * 12) * (sp.region >= 5 ? 2.2 : sp.region >= 3 ? 1.4 : 1);
+  const morphRoll = rng();
+  const morph =
+    morphRoll < 0.03 + luck * 0.015
+      ? ['pearl', 'starlight', 'golden'][Math.floor(rng() * 3)]
+      : undefined;
   return {
     uid: 'fish-' + Date.now() + '-' + Math.floor(rng() * 1e9),
     id: sp.id,
@@ -1097,6 +1294,7 @@ export function rollFish(s, rng = Math.random, conditions = {rarity: 1, phase: '
     bornAt: Date.now(),
     potential: Math.round((0.8 + rng() * 0.8) * 100) / 100,
     care: 0,
+    ...(morph ? {morph} : {}),
   };
 }
 export function buy(s, kind, index) {
@@ -1179,8 +1377,19 @@ export function claimCollection(s) {
   const g = COLLECTION_GOALS[s.collectionClaimed];
   if (!g || s.found.length < g.target) return 0;
   s.pearls += g.reward;
+  s.lifetimeEarned = (s.lifetimeEarned || 0) + g.reward;
   s.collectionClaimed++;
   return g.reward;
+}
+export function claimStoryChapter(s) {
+  const ch = STORY_CHAPTERS[s.storyChapter || 0];
+  if (!ch) return 0;
+  const p = ch.progress(s);
+  if (p.current < p.target) return 0;
+  s.pearls += ch.reward;
+  s.lifetimeEarned = (s.lifetimeEarned || 0) + ch.reward;
+  s.storyChapter = (s.storyChapter || 0) + 1;
+  return ch.reward;
 }
 export function nurture(s, uid) {
   const f = s.fish.find(f => f.uid === uid);
@@ -1191,12 +1400,14 @@ export function nurture(s, uid) {
   accrue(s);
   s.pearls -= cost;
   f.care++;
+  f.bornAt = (f.bornAt ?? Date.now()) - 2 * 60000;
   return true;
 }
 export function feedResidents(s) {
   if (!s.fish.length || s.pearls < 8) return false;
   accrue(s);
   s.pearls -= 8;
+  s.fedCount = (s.fedCount || 0) + 1;
   for (const f of s.fish) f.bornAt -= 2 * 60000;
   return true;
 }
@@ -1218,7 +1429,14 @@ export function rebirth(s) {
     found: s.found,
     records: s.records,
     rebirth: s.rebirth + 1,
+    storyChapter: s.storyChapter || 0,
+    storyMode: s.storyMode !== false,
+    perfectPulls: s.perfectPulls || 0,
+    tidesCompleted: s.tidesCompleted || 0,
     quality: s.quality,
+    rayTracing: s.rayTracing,
+    musicOn: s.musicOn,
+    bredCount: s.bredCount || 0,
     cameraMode: s.cameraMode,
     seenHelp: true,
     lifetimeEarned: s.lifetimeEarned,
@@ -1226,4 +1444,41 @@ export function rebirth(s) {
   Object.keys(s).forEach(k => delete s[k]);
   Object.assign(s, freshState(), keep);
   return true;
+}
+export function canBreed(s, speciesId, now = Date.now()) {
+  if (s.fish.length >= TANKS[s.tank].capacity) return false;
+  const mates = s.fish.filter(f => f.id === speciesId && growth(f, now) >= 0.85);
+  return mates.length >= 2;
+}
+export function breedCost(speciesId) {
+  const sp = SPECIES.find(x => x.id === speciesId);
+  return Math.max(18, Math.ceil((sp?.value || 12) * 1.4));
+}
+export function breedResidents(s, speciesId, now = Date.now(), rng = Math.random) {
+  if (!canBreed(s, speciesId, now)) return null;
+  const cost = breedCost(speciesId);
+  if (s.pearls < cost) return null;
+  const mates = s.fish.filter(f => f.id === speciesId && growth(f, now) >= 0.85);
+  const sp = SPECIES.find(x => x.id === speciesId);
+  accrue(s, now);
+  s.pearls -= cost;
+  s.bredCount = (s.bredCount || 0) + 1;
+  const avgLen = (mates[0].length + mates[1].length) / 2,
+    bestPot = Math.max(mates[0].potential || 1, mates[1].potential || 1),
+    morphs = ['pearl', 'starlight', 'golden'],
+    hasParentMorph = mates.find(m => m.morph)?.morph,
+    morph = rng() < 0.55 ? (hasParentMorph || morphs[Math.floor(rng() * morphs.length)]) : undefined;
+  const fry = {
+    uid: 'fry-' + now + '-' + Math.floor(rng() * 1e9),
+    id: sp.id,
+    length: Math.round(avgLen * (1.02 + rng() * 0.08) * 10) / 10,
+    ageBase: 0.15,
+    bornAt: now,
+    potential: Math.min(1.6, Math.round((bestPot + 0.06 + rng() * 0.1) * 100) / 100),
+    care: 1,
+    ...(morph ? {morph} : {}),
+  };
+  s.fish.push(fry);
+  recordCatch(s, fry);
+  return fry;
 }

@@ -1,15 +1,15 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=8';
-import {makeSwimmer, stepSwimmer} from './swimming.js?v=8';
-import {createWater, createEnvironment, addSway} from './environment.js?v=8';
-import {createAngler} from './angler.js?v=8';
-import {createTackle} from './tackle.js?v=8';
-import {surfaceTexture, cloudTexture, setAnisotropy} from './textures.js?v=8';
-import {rockGeometry, dockGeometry, lantern, reedGeometry, coralGeometry} from './scenery.js?v=8';
-import {place, merge, fbm, paint, tube, displace, lathe} from './models.js?v=8';
-import {createTankSurface} from './surface.js?v=8';
-import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=8';
-import {worldConditions} from './fishing.js?v=8';
+import {createFish, animateFish, disposeFish} from './fish.js?v=10';
+import {makeSwimmer, stepSwimmer} from './swimming.js?v=10';
+import {createWater, createEnvironment, addSway} from './environment.js?v=10';
+import {createAngler} from './angler.js?v=10';
+import {createTackle} from './tackle.js?v=10';
+import {surfaceTexture, cloudTexture, setAnisotropy, normalTexture} from './textures.js?v=10';
+import {rockGeometry, dockGeometry, lantern, reedGeometry, coralGeometry} from './scenery.js?v=10';
+import {place, merge, fbm, paint, tube, displace, lathe, rtUniforms, applyRayTracedShading} from './models.js?v=10';
+import {createTankSurface} from './surface.js?v=10';
+import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=10';
+import {worldConditions} from './fishing.js?v=10';
 const TAU = Math.PI * 2;
 // Sky keys across the 20-minute world day: [cycle, zenith, horizon, sun colour].
 const SKY = [
@@ -41,12 +41,17 @@ function skyAt(cycle, region, out) {
 // Graphics tiers. Ultra renders at full device resolution with 4K shadows, a finer water
 // mesh, denser grass, anisotropic textures and faster sky reflections.
 const PROFILES = {
-  battery: {ratio: 1, shadow: 0, fps: 30, env: 60},
-  balanced: {ratio: 1.5, shadow: 1024, fps: 45, env: 4},
-  crisp: {ratio: 2, shadow: 2048, fps: 60, env: 4},
-  ultra: {ratio: 3, shadow: 4096, fps: 60, env: 2},
+  "ultra-low": {ratio: 0.75, shadow: 0, fps: 30, env: 120, rt: 0, reflSize: 0},
+  low: {ratio: 1, shadow: 0, fps: 30, env: 60, rt: 0, reflSize: 0},
+  medium: {ratio: 1.35, shadow: 1024, fps: 45, env: 6, rt: 0, reflSize: 0},
+  high: {ratio: 1.75, shadow: 2048, fps: 60, env: 4, rt: 1, reflSize: 512},
+  "very-high": {ratio: 2.25, shadow: 3072, fps: 60, env: 2.5, rt: 1, reflSize: 768},
+  ultra: {ratio: 3, shadow: 4096, fps: 60, env: 1.5, rt: 1, reflSize: 1024},
+  battery: {ratio: 1, shadow: 0, fps: 30, env: 60, rt: 0, reflSize: 0},
+  balanced: {ratio: 1.35, shadow: 1024, fps: 45, env: 6, rt: 0, reflSize: 0},
+  crisp: {ratio: 1.75, shadow: 2048, fps: 60, env: 4, rt: 1, reflSize: 512},
 };
-const profile = state => PROFILES[state.quality] || PROFILES.balanced;
+const profile = state => PROFILES[state.quality] || PROFILES.high;
 export function createWorld(canvas, state, onError) {
   let renderer;
   try {
@@ -92,6 +97,10 @@ export function createWorld(canvas, state, onError) {
   scene.fog = new T.FogExp2('#35575b', 0.0045);
   // The far plane reaches the mountains all round the water (land.js); fog hides the rest.
   const camera = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 900);
+  const reflCam = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 900);
+  let reflTarget = null;
+  const reflMatrix = new T.Matrix4(),
+    reflClipPlane = new T.Plane(new T.Vector3(0, 1, 0), -0.02);
   const lake = new T.Group(),
     tank = new T.Group();
   scene.add(lake, tank);
@@ -123,7 +132,7 @@ export function createWorld(canvas, state, onError) {
   const fill = new T.DirectionalLight('#79b9d7', 1);
   fill.position.set(12, 8, -12);
   scene.add(fill);
-  const mat = (color, extras = {}) => new T.MeshStandardMaterial({color, roughness: 0.68, ...extras});
+  const mat = (color, extras = {}) => applyRayTracedShading(new T.MeshStandardMaterial({color, roughness: 0.68, ...extras}));
   const geoSphere = new T.SphereGeometry(1, 20, 14),
     geoBox = new T.BoxGeometry(1, 1, 1),
     geoCylinder = new T.CylinderGeometry(1, 1, 1, 20);
@@ -273,7 +282,7 @@ export function createWorld(canvas, state, onError) {
   lake.add(dock);
   dock.position.set(0, 0, 8);
   // Deck top sits at y 0.3, where the angler's boots stand.
-  shade(mesh(dockGeometry(6.7, 3.1, 4), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9, map: surfaceTexture('wood')}), dock, [0, 0.055, 1.42]), true, true);
+  shade(mesh(dockGeometry(6.7, 3.1, 4), applyRayTracedShading(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.86, map: surfaceTexture('wood'), normalMap: normalTexture('wood'), normalScale: new T.Vector2(0.45, 0.45)})), dock, [0, 0.055, 1.42]), true, true);
   const lamp = lantern(mat('#e9c58e', {emissive: '#f3b15d', emissiveIntensity: 1, transparent: true, opacity: 0.7}));
   lamp.position.set(-1, 0.3, 6.6);
   lake.add(shade(lamp));
@@ -979,7 +988,7 @@ export function createWorld(canvas, state, onError) {
         disposeFish(old.mesh);
       }
       const f = species.find(x => x.id === resident.id);
-      const model = createFish(f);
+      const model = createFish({...f, morph: resident.morph});
       // Only the body casts: fins add many draw calls to the shadow pass for little visible gain.
       model.userData.body.castShadow = true;
       fishGroup.add(model);
@@ -1157,7 +1166,26 @@ export function createWorld(canvas, state, onError) {
   }
   function applyQuality() {
     const q = profile(state),
-      shadows = q.shadow > 0;
+      shadows = q.shadow > 0,
+      rtOn = state.rayTracing === 'on' || (state.rayTracing !== 'off' && q.rt > 0);
+    rtUniforms.rtEnabled.value = rtOn ? 1 : 0;
+    const wantRefl = rtOn ? Math.max(512, q.reflSize || 512) : 0;
+    if (wantRefl > 0) {
+      if (!reflTarget || reflTarget.width !== wantRefl) {
+        reflTarget?.dispose();
+        reflTarget = new T.WebGLRenderTarget(wantRefl, wantRefl, {
+          minFilter: T.LinearFilter,
+          magFilter: T.LinearFilter,
+          type: T.HalfFloatType,
+        });
+      }
+      if (waterSystem.uniforms.reflTex) {
+        waterSystem.uniforms.reflTex.value = reflTarget.texture;
+        waterSystem.uniforms.rtRefl.value = 1;
+      }
+    } else if (waterSystem.uniforms.rtRefl) {
+      waterSystem.uniforms.rtRefl.value = 0;
+    }
     if (renderer.shadowMap.enabled !== shadows) {
       renderer.shadowMap.enabled = shadows;
       scene.traverse(o => {
@@ -1169,12 +1197,21 @@ export function createWorld(canvas, state, onError) {
       sun.shadow.map?.dispose();
       sun.shadow.map = null;
     }
-    sun.shadow.radius = state.quality === 'ultra' ? 2 : 3;
+    sun.shadow.radius = ['ultra', 'very-high'].includes(state.quality) ? 2 : 3;
     renderer.setPixelRatio(Math.min(devicePixelRatio, q.ratio));
     renderer.setSize(innerWidth, innerHeight);
-    waterSystem.setResolution?.(state.quality === 'ultra');
+    waterSystem.setResolution?.(state.quality);
     surroundings.setDetail?.(state.quality);
-    setAnisotropy(state.quality === 'ultra' ? renderer.capabilities?.getMaxAnisotropy?.() || 1 : state.quality === 'crisp' ? 4 : 1);
+    const maxAniso = renderer.capabilities?.getMaxAnisotropy?.() || 1;
+    setAnisotropy(
+      state.quality === 'ultra'
+        ? maxAniso
+        : state.quality === 'very-high'
+          ? Math.min(8, maxAniso)
+          : ['high', 'crisp'].includes(state.quality)
+            ? Math.min(4, maxAniso)
+            : 1,
+    );
   }
   applyQuality();
   function frame(ms) {
@@ -1433,7 +1470,7 @@ export function createWorld(canvas, state, onError) {
         scene.fog.density += ((titleMode ? 0.0045 : haze) - scene.fog.density) * blend;
       }
       const wu = waterSystem.uniforms;
-      wu.detail.value = state.quality === 'battery' ? 0 : 1;
+      wu.detail.value = ['ultra-low', 'low', 'battery'].includes(state.quality) ? 0 : 1;
       wu.skyTop.value.copy(gradient.uniforms.top.value);
       wu.skyHorizon.value.copy(gradient.uniforms.bottom.value);
       wu.sunDir.value.copy(lightDir);
@@ -1522,7 +1559,7 @@ export function createWorld(canvas, state, onError) {
           tankSurface.impulse(m.p.x / tankK.x, m.p.z / tankK.z, 0.05 + Math.hypot(m.v.x, m.v.z) * 0.08, 0.22);
         animateFish(s.mesh, m.tail, 0.7 + Math.hypot(m.v.x, m.v.z) * 0.7);
         // Level of detail: distant fish drop their smallest fins (never on Ultra).
-        const near = state.quality === 'ultra' || camera.position.distanceTo(s.mesh.position) < 26;
+        const near = ['ultra', 'very-high'].includes(state.quality) || camera.position.distanceTo(s.mesh.position) < 26;
         for (const part of s.mesh.userData.lodParts || []) part.visible = near;
       }
       selectedRing.visible = false;
@@ -1586,6 +1623,40 @@ export function createWorld(canvas, state, onError) {
       scene.environment = target.texture;
       scene.environmentIntensity = view === 'lake' ? 0.55 : 0.4;
     }
+    const qProf = profile(state),
+      rtActive = state.rayTracing === 'on' || (state.rayTracing !== 'off' && qProf.rt > 0);
+    rtUniforms.rtEnabled.value = rtActive ? 1 : 0;
+    rtUniforms.rtSunDir.value.copy(lightDir);
+    rtUniforms.rtSkyColor.value.copy(gradient.uniforms.top.value).lerp(gradient.uniforms.bottom.value, 0.5);
+    if (view === 'lake') {
+      rtUniforms.rtBounceColor.value.set(region === 4 ? '#2fb8b4' : region >= 3 ? '#155068' : '#265c52').multiplyScalar(waterSystem.uniforms.light.value);
+    } else {
+      rtUniforms.rtBounceColor.value.copy(tankGlow.color).multiplyScalar(0.5);
+    }
+    if (view === 'lake' && rtActive && reflTarget && renderer.setRenderTarget) {
+      reflCam.aspect = camera.aspect;
+      reflCam.fov = camera.fov;
+      reflCam.updateProjectionMatrix();
+      reflCam.position.set(camera.position.x, -camera.position.y, camera.position.z);
+      reflCam.up.set(0, -1, 0);
+      reflCam.lookAt(cameraLook.x, -cameraLook.y, cameraLook.z);
+      reflCam.updateMatrixWorld();
+      reflMatrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+      reflMatrix.multiply(reflCam.projectionMatrix).multiply(reflCam.matrixWorldInverse);
+      waterSystem.uniforms.reflMatrix.value.copy(reflMatrix);
+      waterSystem.uniforms.rtRefl.value = 1;
+      waterSystem.mesh.visible = false;
+      const prevTarget = renderer.getRenderTarget?.() || null;
+      renderer.setRenderTarget(reflTarget);
+      renderer.clear();
+      renderer.render(skyScene, reflCam);
+      renderer.clearDepth?.();
+      renderer.clippingPlanes = [reflClipPlane];
+      renderer.render(scene, reflCam);
+      renderer.clippingPlanes = [];
+      renderer.setRenderTarget(prevTarget);
+      waterSystem.mesh.visible = true;
+    }
     renderer.clear();
     renderer.render(skyScene, camera);
     renderer.clearDepth?.();
@@ -1608,6 +1679,7 @@ export function createWorld(canvas, state, onError) {
   requestAnimationFrame(frame);
   return {
     startIntro: () => (introFly = 0),
+    hasActiveRise: () => !!jump || riseWait > 7.5,
     setTitle: on => {
       titleMode = on;
       castState = on ? 'title' : 'idle';
@@ -1705,7 +1777,8 @@ export function createWorld(canvas, state, onError) {
         lake.remove(heldFish);
         disposeFish(heldFish);
       }
-      heldFish = shade(createFish(SPECIES.find(f => f.id === fish.id)));
+      const sp = SPECIES.find(f => f.id === fish.id);
+      heldFish = shade(createFish({...sp, morph: fish.morph}));
       const maxLength = heldFish.userData.profile.len * heldFish.scale.x;
       if (maxLength > 1.5) heldFish.scale.multiplyScalar(1.5 / maxLength);
       const color = RARITY_COLORS[SPECIES.find(f => f.id === fish.id).rarity];

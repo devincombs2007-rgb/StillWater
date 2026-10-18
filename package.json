@@ -1,1 +1,1 @@
-{"name":"stillwater-sanctuary","version":"1.6.0","private":true,"type":"module","scripts":{"test":"node --test checks/*.test.mjs"}}
+{"name":"stillwater-sanctuary","version":"1.8.0","private":true,"type":"module","scripts":{"test":"node --test checks/*.test.mjs"}}

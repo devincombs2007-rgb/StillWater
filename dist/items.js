@@ -1,10 +1,10 @@
 import * as T from './assets/three.module.js';
-import {lathe, displace, paint, place, merge, tube, vcMaterial} from './models.js?v=8';
-import {hookGeometry, baitModel, lantern, broadleaf, pine, rock, palm, coral, reedGeometry, lilyPadGeometry, harborBuilding} from './scenery.js?v=8';
-import {boatModel} from './environment.js?v=8';
-import {surfaceTexture} from './textures.js?v=8';
-import {BAITS} from './economy.js?v=8';
-import {ROD_LOOKS, LINE_LOOKS} from './looks.js?v=8';
+import {lathe, displace, paint, place, merge, tube, vcMaterial} from './models.js?v=10';
+import {hookGeometry, baitModel, lantern, broadleaf, pine, rock, palm, coral, reedGeometry, lilyPadGeometry, harborBuilding} from './scenery.js?v=10';
+import {boatModel} from './environment.js?v=10';
+import {surfaceTexture} from './textures.js?v=10';
+import {BAITS} from './economy.js?v=10';
+import {ROD_LOOKS, LINE_LOOKS} from './looks.js?v=10';
 // 3D models for market items, rendered into the shop's thumbnails. Each builder returns
 // the object and how to look at it: a turn (yaw), a tilt (pitch) and an optional focus box.
 const V = (x, y, z) => new T.Vector3(x, y, z);

@@ -16,6 +16,12 @@ Live game: https://stillwater-sanctuary-dev.devincombs.chatgpt.site
 
 The live Site is owner-private. Its identity is in `.openai/hosting.json`. This archive does not provide hosting credentials or the player’s save. Claude can edit/run the supplied static source locally; publishing to the existing Site requires an authorized Sites-capable environment. A separate host is possible if Devin chooses one. Do not imply that opening the live URL grants repository or deployment access.
 
+## v1.8 (Gemini pass, merged by Claude) — build 10
+
+Gemini worked from the playable link and added: story mode (“Sanctuary Chronicles”, 8 chapters with permanent +3% income / +2% luck per chapter), Milo's daily Tide Request, perfect-pull and three-hit rhythm reeling with fish posture (gliding/darting), surface-rise bonus casts, pair breeding with rare morphs (pearl, starlight, gold), species lore and 3D species inspection, six graphics presets (Ultra Low … Ultra; old battery/balanced/crisp saves map to low/medium/high) with a separate ray-tracing toggle, planar water reflections, shader-injected contact shading/bounce light/rim scattering (`applyRayTracedShading` in `models.js`), procedural normal maps (`normalTexture` in `textures.js`), higher-detail fish, angler, boats, trees, cottages, cars and dock props, and a layered soundscape with optional ambient harp music.
+
+Claude's merge: restored local Three.js imports, versioned module URLs (v10), iPhone/PWA head tags and the offline worker; tests updated for the new rules (perfect pulls let an overmatched fish survive a few more pulls before the line snaps; story text). Story mode was previously deferred; it is now in at Devin's direction. Known to check: pale banding on the new pines; the reflection pass renders the scene twice on High and above (watch phone frame rate and heat; High is the new default).
+
 ## v1.6 “Hands on the Water” — what changed
 
 - **People look like people.** The angler (and Milo, who uses the same rig) was rebuilt with adult proportions: lofted superellipse legs, pelvis, torso, collar and neck (`models.loft`), a sculpted skull with jaw, chin, cheekbones and brow, eyeballs with iris/pupil caps, upper lids with lashes that blink, lower lids, a lofted nose, lips, and ears with a rim. Six hairstyles (soft waves, classic, close cut, long, ponytail, bun), four facial-hair options (clean, stubble, moustache, beard) and five eye colours. A winding bug in `loft` had turned every lofted surface inside-out (you saw the inner back wall: floating neck rings, jagged hems); fixed.

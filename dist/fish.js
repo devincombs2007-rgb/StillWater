@@ -1,9 +1,13 @@
 import * as T from './assets/three.module.js';
-import {merge, paint} from './models.js?v=8';
+import {merge, paint, applyRayTracedShading} from './models.js?v=10';
+import {normalTexture} from './textures.js?v=10';
 const PI = Math.PI,
   TAU = PI * 2;
 const white = new T.Color('#f2dfb5'),
-  dark = new T.Color('#163b43');
+  dark = new T.Color('#163b43'),
+  pearlTint = new T.Color('#f7f2ff'),
+  starTint = new T.Color('#7ce8ff'),
+  goldTint = new T.Color('#ffd66b');
 // Per body plan: size (h height, w width, len, tail span), the narrow caudal peduncle,
 // where the body is deepest, how blunt the head is (higher = rounder), and fin layout.
 const ANATOMY = {
@@ -43,8 +47,8 @@ const midline = (p, u) => -p.h * 0.07 * Math.max(0, (u - p.deep) / (1 - p.deep))
 function bodyColor(f, u, a) {
   const c = new T.Color(f.color),
     dorsal = Math.sin(a);
-  c.multiplyScalar(0.73 + Math.max(0, dorsal) * 0.15);
-  if (dorsal < -0.1) c.lerp(white, Math.min(0.65, (-dorsal - 0.1) * 0.7));
+  c.multiplyScalar(0.73 + Math.max(0, dorsal) * 0.16);
+  if (dorsal < -0.1) c.lerp(white, Math.min(0.68, (-dorsal - 0.1) * 0.72));
   const id = f.id;
   if (['perch', 'midnight', 'ram', 'peacock', 'molly'].includes(id) && Math.sin(u * 34 + (id === 'ram' ? 1 : 0)) > 0.53)
     c.lerp(dark, 0.48);
@@ -72,13 +76,17 @@ function bodyColor(f, u, a) {
   if (id === 'tang' && u < 0.25) c.set('#ddc36b');
   if (id === 'mackerel' && dorsal > 0.2 && Math.sin(u * 78) > 0.5) c.lerp(dark, 0.5);
   if (id === 'cory' && (u > 0.73 || u < 0.16)) c.lerp(dark, 0.8);
+  // Sanctuary rare morph tints (Pearl, Starlight, Golden)
+  if (f.morph === 'pearl') c.lerp(pearlTint, 0.38 + 0.2 * Math.sin(u * 24 + a * 3));
+  else if (f.morph === 'starlight') c.lerp(starTint, 0.32 + 0.25 * Math.max(0, Math.sin(u * 38 + a * 5)));
+  else if (f.morph === 'golden') c.lerp(goldTint, 0.42 + 0.18 * Math.cos(u * 20));
   // Lateral line and a darker gill cover.
-  if (u > 0.08 && u < 0.76 && Math.abs(dorsal - 0.2) < 0.035) c.multiplyScalar(0.86);
-  if (u > 0.74 && u < 0.8 && Math.abs(dorsal) < 0.75) c.multiplyScalar(0.9);
-  // Subtle offset scale rows catch the light without separate meshes.
-  const row = Math.floor((a + PI) / 0.24),
-    scale = Math.cos(u * 160 + (row % 2) * PI);
-  c.multiplyScalar(0.97 + scale * 0.035);
+  if (u > 0.08 && u < 0.76 && Math.abs(dorsal - 0.2) < 0.032) c.multiplyScalar(0.84);
+  if (u > 0.74 && u < 0.8 && Math.abs(dorsal) < 0.75) c.multiplyScalar(0.88);
+  // Subtle offset scale rows catch the light with metallic shimmer.
+  const row = Math.floor((a + PI) / 0.2),
+    scale = Math.cos(u * 190 + (row % 2) * PI);
+  c.multiplyScalar(0.965 + scale * 0.042);
   return c;
 }
 function gridGeometry(rows, cols, fn) {
@@ -119,32 +127,52 @@ export function createFish(f) {
     widthAt = u => p.w * thickness(p, u) * (f.shape === 'catfish' ? 1 + 0.3 * Math.max(0, (u - 0.55) / 0.45) : 1),
     topAt = u => midline(p, u) + p.h * thickness(p, u) * p.top,
     botAt = u => midline(p, u) - p.h * thickness(p, u) * p.bot;
-  const bodyGeo = gridGeometry(48, 28, (u, v) => {
+  // High-resolution 64x36 anatomical body mesh with dorsal/ventral muscle contour and gill operculum relief.
+  const bodyGeo = gridGeometry(64, 36, (u, v) => {
     const a = v * TAU,
       t = thickness(p, u),
       sa = Math.sin(a),
-      ca = Math.cos(a);
+      ca = Math.cos(a),
+      operculum = u > 0.74 && u < 0.81 && Math.abs(sa) < 0.72 ? 1.038 : 1,
+      flankMuscle = u > 0.15 && u < 0.7 && Math.abs(sa) < 0.55 ? 1 + 0.025 * Math.sin((u - 0.15) * 5.5) : 1;
     const y = midline(p, u) + sa * p.h * t * (sa > 0 ? p.top : p.bot);
-    return {p: [xAt(u), y, ca * widthAt(u)], c: bodyColor(f, u, a)};
+    return {p: [xAt(u), y, ca * widthAt(u) * operculum * flankMuscle], c: bodyColor(f, u, a)};
   });
-  const skin = new T.MeshStandardMaterial({
+  const skin = new T.MeshPhysicalMaterial({
     vertexColors: true,
-    roughness: 0.32,
-    metalness: 0.2,
+    roughness: 0.24,
+    metalness: f.morph ? 0.38 : 0.24,
+    clearcoat: 0.92,
+    clearcoatRoughness: 0.12,
+    iridescence: 0.28 + (f.rarity || 0) * 0.14 + (f.morph ? 0.3 : 0),
+    iridescenceIOR: 1.38,
+    sheen: 0.35,
+    sheenRoughness: 0.35,
+    normalMap: normalTexture('scales'),
+    normalScale: new T.Vector2(0.16, 0.16),
     transparent: f.id === 'glasscat',
     opacity: f.id === 'glasscat' ? 0.64 : 1,
   });
+  if (f.morph) {
+    skin.emissive = new T.Color(f.morph === 'starlight' ? '#3aa8d8' : f.morph === 'golden' ? '#d49b35' : '#b8a8d8');
+    skin.emissiveIntensity = 0.14;
+  }
+  applyRayTracedShading(skin, 0.26);
   const body = new T.Mesh(bodyGeo, skin);
   g.add(body);
-  const finMaterial = new T.MeshStandardMaterial({
+  const finMaterial = new T.MeshPhysicalMaterial({
     vertexColors: true,
     side: T.DoubleSide,
-    roughness: 0.42,
-    metalness: 0.1,
+    roughness: 0.34,
+    metalness: 0.08,
+    clearcoat: 0.55,
+    clearcoatRoughness: 0.2,
+    sheen: 0.35,
     transparent: true,
-    opacity: f.shape === 'betta' || f.shape === 'dragon' ? 0.8 : 0.9,
+    opacity: f.shape === 'betta' || f.shape === 'dragon' ? 0.82 : 0.9,
     depthWrite: false,
   });
+  applyRayTracedShading(finMaterial, 0.42);
   // Each fin keeps a per-vertex weight (0 at the root, 1 at the edge) for animation.
   const fins = [];
   function addFin(geometry, parent = g, weight = (u, v) => u) {
@@ -157,7 +185,10 @@ export function createFish(f) {
     return m;
   }
   const finC = new T.Color(f.fin),
-    edge = new T.Color(f.color).lerp(white, 0.32);
+    edge = new T.Color(f.color).lerp(white, 0.34);
+  if (f.morph === 'pearl') finC.lerp(pearlTint, 0.45);
+  else if (f.morph === 'starlight') finC.lerp(starTint, 0.45);
+  else if (f.morph === 'golden') finC.lerp(goldTint, 0.45);
   // Rays: darker lines radiating through the membrane, lighter toward the edge.
   function finColor(u, v, rays = 36) {
     const c = finC.clone().lerp(edge, u * 0.65);
@@ -180,15 +211,15 @@ export function createFish(f) {
     return 0.62 + 0.08 * Math.sin(span * 6);
   };
   const makeTail = (type, spread = 1) =>
-    gridGeometry(14, 30, (u, v) => {
+    gridGeometry(18, 36, (u, v) => {
       const span = v * 2 - 1,
         L = lobe(type, span) * (type === 'veil' || type === 'double' ? p.tail / 0.6 : 1),
         flow = type === 'veil' || type === 'double' ? Math.sin(v * PI * 7) * 0.035 * u : 0,
         root = Math.min(0.6, (p.ped * p.h) / p.tail),
         height = (type === 'lunate' ? 1.25 : 1) * p.tail * spread * (root + (1 - root) * Math.pow(u, 0.85));
       return {
-        p: [-u * L - (type === 'lunate' ? Math.abs(span) * 0.1 * u : 0), span * height + flow, ray(v, 18, 0.006) * u],
-        c: finColor(u, v, 18),
+        p: [-u * L - (type === 'lunate' ? Math.abs(span) * 0.1 * u : 0), span * height + flow, ray(v, 22, 0.007) * u],
+        c: finColor(u, v, 22),
       };
     });
   if (p.tailType === 'double') {
@@ -202,7 +233,7 @@ export function createFish(f) {
   const dorsalFrom = p.dorsalFrom ?? 0.3,
     dorsalTo = p.dorsalTo ?? 0.7;
   addFin(
-    gridGeometry(26, 6, (u, v) => {
+    gridGeometry(32, 8, (u, v) => {
       const bu = dorsalFrom + u * (dorsalTo - dorsalFrom),
         env =
           f.shape === 'angel'
@@ -212,7 +243,7 @@ export function createFish(f) {
               : Math.pow(Math.sin(PI * u), 0.65) * (1 - 0.35 * u);
       // Lionfish carry a crown of separate spines rather than a smooth sail.
       const spines = f.id === 'lion' ? 0.45 + 0.55 * Math.abs(Math.sin(u * PI * 9)) : 1;
-      return {p: [xAt(bu) - v * 0.08 * env, topAt(bu) * 0.96 + env * spines * p.dorsal * v, ray(u, 6, 0.012) * v], c: finColor(v, u, 14)};
+      return {p: [xAt(bu) - v * 0.08 * env, topAt(bu) * 0.96 + env * spines * p.dorsal * v, ray(u, 8, 0.012) * v], c: finColor(v, u, 16)};
     }),
     g,
     (u, v) => v,
@@ -220,17 +251,17 @@ export function createFish(f) {
   const analFrom = f.shape === 'angel' ? 0.22 : f.shape === 'eel' || f.shape === 'dragon' ? 0.08 : 0.2,
     analTo = f.shape === 'angel' ? 0.55 : f.shape === 'eel' ? 0.5 : 0.42;
   addFin(
-    gridGeometry(18, 5, (u, v) => {
+    gridGeometry(22, 6, (u, v) => {
       const bu = analFrom + u * (analTo - analFrom),
         env = f.shape === 'angel' ? Math.pow(u < 0.6 ? u / 0.6 : (1 - u) / 0.4, 0.8) : Math.pow(Math.sin(PI * u), 0.7);
-      return {p: [xAt(bu) - v * 0.06 * env, botAt(bu) * 0.96 - env * p.anal * v, ray(u, 5, 0.01) * v], c: finColor(v, u, 10)};
+      return {p: [xAt(bu) - v * 0.06 * env, botAt(bu) * 0.96 - env * p.anal * v, ray(u, 6, 0.01) * v], c: finColor(v, u, 12)};
     }),
     g,
     (u, v) => v,
   );
   if (p.adipose)
     addFin(
-      gridGeometry(6, 3, (u, v) => {
+      gridGeometry(8, 4, (u, v) => {
         const bu = 0.14 + u * 0.08;
         return {p: [xAt(bu), topAt(bu) * 0.95 + Math.sin(PI * u) * 0.05 * v, 0], c: finColor(v, u, 4)};
       }),
@@ -239,7 +270,7 @@ export function createFish(f) {
     );
   if (f.id === 'sword')
     addFin(
-      gridGeometry(8, 4, (u, v) => ({p: [-u * 0.6, -0.1 - u * 0.12 + v * 0.045, 0.01], c: finColor(u, v, 4).lerp(dark, u * 0.5)})),
+      gridGeometry(10, 5, (u, v) => ({p: [-u * 0.6, -0.1 - u * 0.12 + v * 0.045, 0.01], c: finColor(u, v, 5).lerp(dark, u * 0.5)})),
       tail,
     );
 
@@ -258,10 +289,10 @@ export function createFish(f) {
     g.add(root);
     const span = f.id === 'lion' ? 0.5 : f.shape === 'catfish' ? 0.34 : f.shape === 'disc' || f.shape === 'angel' ? 0.22 : 0.27;
     addFin(
-      gridGeometry(10, 12, (u, v) => {
+      gridGeometry(12, 14, (u, v) => {
         const fan = (v - 0.5) * 1.2,
           len = span * (1 - 0.35 * fan * fan);
-        return {p: [-u * len * Math.cos(fan * 0.5) , -u * len * Math.sin(fan * 0.5) * 0.9 - u * 0.04, side * (u * 0.07)], c: finColor(u, v, 12)};
+        return {p: [-u * len * Math.cos(fan * 0.5), -u * len * Math.sin(fan * 0.5) * 0.9 - u * 0.04, side * (u * 0.07)], c: finColor(u, v, 14)};
       }),
       root,
     );
@@ -271,45 +302,56 @@ export function createFish(f) {
     pelvic.position.set(xAt(pelU), botAt(pelU) * 0.92, side * widthAt(pelU) * 0.45);
     g.add(pelvic);
     addFin(
-      gridGeometry(6, 6, (u, v) => ({p: [-u * 0.16 - v * 0.05, -u * 0.08 * (0.6 + v * 0.4), side * u * 0.05], c: finColor(u, v, 6)})),
+      gridGeometry(8, 8, (u, v) => ({p: [-u * 0.16 - v * 0.05, -u * 0.08 * (0.6 + v * 0.4), side * u * 0.05], c: finColor(u, v, 8)})),
       pelvic,
     );
 
-    // Eye in a socket, with iris ring and glint.
+    // Eye in a sculpted orbital socket, with metallic iris ring, pupil, cornea dome and specular catchlight.
     const eyeU = f.shape === 'catfish' ? 0.87 : 0.85,
       eyeY = midline(p, eyeU) + p.h * thickness(p, eyeU) * 0.3,
       eyeZ = widthAt(eyeU) * Math.sqrt(1 - 0.09) + 0.004,
       eyeX = xAt(eyeU),
       er = 0.05 * Math.min(1.2, Math.max(0.8, p.h / 0.3));
     const sphereAt = (pos, scale, color) => {
-      const geo = new T.SphereGeometry(1, 12, 9);
+      const geo = new T.SphereGeometry(1, 16, 12);
       geo.scale(...scale);
       geo.translate(...pos);
       details.push(paint(geo, color));
     };
-    sphereAt([eyeX, eyeY, side * (eyeZ - 0.006)], [er * 1.25, er * 1.25, er * 0.45], new T.Color(f.color).multiplyScalar(0.8));
-    sphereAt([eyeX, eyeY, side * eyeZ], [er, er * 1.05, er * 0.5], '#0d1719');
-    const iris = new T.TorusGeometry(er * 0.82, er * 0.2, 6, 20);
+    sphereAt([eyeX, eyeY, side * (eyeZ - 0.006)], [er * 1.28, er * 1.28, er * 0.48], new T.Color(f.color).multiplyScalar(0.76));
+    sphereAt([eyeX, eyeY, side * eyeZ], [er, er * 1.05, er * 0.52], '#0b1416');
+    const iris = new T.TorusGeometry(er * 0.82, er * 0.22, 8, 24);
     iris.translate(eyeX, eyeY, side * (eyeZ + er * 0.32));
-    details.push(paint(iris, f.rarity > 2 ? '#e9cf8f' : '#c5b783'));
-    sphereAt([eyeX + er * 0.3, eyeY + er * 0.35, side * (eyeZ + er * 0.45)], [er * 0.24, er * 0.26, er * 0.12], '#fbfaf0');
+    details.push(paint(iris, f.rarity > 2 ? '#f0d493' : '#ccb982'));
+    sphereAt([eyeX + er * 0.3, eyeY + er * 0.35, side * (eyeZ + er * 0.47)], [er * 0.25, er * 0.27, er * 0.14], '#ffffff');
+    sphereAt([eyeX - er * 0.22, eyeY - er * 0.2, side * (eyeZ + er * 0.44)], [er * 0.12, er * 0.12, er * 0.08], '#d8eef2');
 
-    // Gill cover edge following the body surface.
-    const gu = 0.77,
-      points = [];
-    for (let i = 0; i <= 14; i++) {
-      const a = -1.1 + (i / 14) * 2.2,
-        y = midline(p, gu) + Math.sin(a) * p.h * thickness(p, gu) * (a > 0 ? p.top : p.bot) * 0.85;
-      points.push(new T.Vector3(xAt(gu) - Math.cos(a) * 0.05, y, side * (Math.cos(a) * widthAt(gu) * 0.97 + 0.004)));
+    // Nostril pit ahead of the eye.
+    const narU = 0.92,
+      narY = midline(p, narU) + p.h * thickness(p, narU) * 0.25,
+      narZ = widthAt(narU) * 0.88;
+    sphereAt([xAt(narU), narY, side * narZ], [er * 0.2, er * 0.14, er * 0.14], new T.Color(f.color).multiplyScalar(0.55));
+
+    // Gill cover (operculum) double-ridge following the body surface.
+    for (const [gu, rad, shade] of [
+      [0.77, 0.0065, 1],
+      [0.752, 0.004, 0.75],
+    ]) {
+      const points = [];
+      for (let i = 0; i <= 16; i++) {
+        const a = -1.1 + (i / 16) * 2.2,
+          y = midline(p, gu) + Math.sin(a) * p.h * thickness(p, gu) * (a > 0 ? p.top : p.bot) * 0.85;
+        points.push(new T.Vector3(xAt(gu) - Math.cos(a) * 0.05, y, side * (Math.cos(a) * widthAt(gu) * 0.97 + 0.004)));
+      }
+      details.push(paint(new T.TubeGeometry(new T.CatmullRomCurve3(points), 16, rad, 5, false), new T.Color(f.fin).multiplyScalar(shade)));
     }
-    details.push(paint(new T.TubeGeometry(new T.CatmullRomCurve3(points), 14, 0.006, 4, false), f.fin));
   }
-  // Mouth: lips at the snout, a little below the midline.
-  const lips = new T.TorusGeometry(0.03 * Math.min(1.3, p.h / 0.28), 0.011, 6, 16);
-  lips.scale(1, 0.7, 1);
+  // Mouth: sculpted upper and lower lips at the snout.
+  const lips = new T.TorusGeometry(0.031 * Math.min(1.3, p.h / 0.28), 0.012, 8, 20);
+  lips.scale(1, 0.72, 1);
   lips.rotateY(PI / 2);
   lips.translate(headX - 0.012, midline(p, 0.99) - p.h * 0.04, 0);
-  details.push(paint(lips, new T.Color(f.fin).multiplyScalar(0.7)));
+  details.push(paint(lips, new T.Color(f.fin).multiplyScalar(0.72)));
   // Barbels: koi have a short pair, catfish four long ones, arowana a chin pair.
   const feelers = p.barbels || 0;
   for (let j = 0; j < feelers; j++) {
@@ -324,20 +366,22 @@ export function createFish(f) {
       new T.Vector3(x0 + len * (0.25 + forward * 0.4) - len * 0.2, y0 - len * 0.4, side * (0.06 + len * 0.3)),
       new T.Vector3(x0 + len * forward * 0.6 - len * 0.5, y0 - len * 0.75, side * (0.08 + len * 0.45)),
     ]);
-    details.push(paint(new T.TubeGeometry(curve, 12, long ? 0.009 : 0.007, 5, false), f.fin));
+    details.push(paint(new T.TubeGeometry(curve, 14, long ? 0.009 : 0.007, 6, false), f.fin));
   }
   if (['marlin', 'sailfish'].includes(f.id)) {
-    const bill = new T.ConeGeometry(0.028, 0.7, 10);
+    const bill = new T.ConeGeometry(0.028, 0.72, 14);
     bill.rotateZ(-Math.PI / 2);
-    bill.translate(headX + 0.32, midline(p, 1) + 0.01, 0);
+    bill.translate(headX + 0.33, midline(p, 1) + 0.01, 0);
     details.push(paint(bill, f.fin));
   }
   // Eyes, gill covers, lips, barbels and bill never deform, so they share one draw call.
-  const detailMesh = new T.Mesh(merge(details), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.3, metalness: 0.2}));
+  const detailMat = new T.MeshPhysicalMaterial({vertexColors: true, roughness: 0.18, metalness: 0.28, clearcoat: 0.95, clearcoatRoughness: 0.08});
+  applyRayTracedShading(detailMat, 0.1);
+  const detailMesh = new T.Mesh(merge(details), detailMat);
   detailMesh.name = 'Fish details';
   g.add(detailMesh);
   g.scale.setScalar(0.59 + (f.size - 1) * 0.16);
-  g.userData = {tail, pectorals, fins, body, bodyBase: bodyGeo.attributes.position.array.slice(), profile: p, uid: null};
+  g.userData = {tail, pectorals, fins, body, bodyBase: bodyGeo.attributes.position.array.slice(), profile: p, uid: null, morph: f.morph || null};
   return g;
 }
 export function animateFish(g, time, speed = 1) {

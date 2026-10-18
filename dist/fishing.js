@@ -1,4 +1,4 @@
-import {BAITS, LINES, effectiveRod, fishWeight, rollFish} from './economy.js?v=8';
+import {BAITS, LINES, effectiveRod, fishWeight, rollFish} from './economy.js?v=10';
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 // Weather by water: each region has its own climate. A spell of weather lasts about seven
 // minutes and the scene eases from one spell into the next.
@@ -84,6 +84,11 @@ export function startEncounter(s, conditions, rng = Math.random) {
     power: spPower,
     outcome: null,
     pulls: 0,
+    streak: 0,
+    perfects: 0,
+    lastHit: null,
+    posture: 'swimming',
+    seed: rng() * 10,
     environment: conditions,
     held: false,
   };
@@ -94,6 +99,9 @@ export function reelProfile(rarity = 0) {
 }
 export function isReelHit(fight, accuracy) {
   return Math.abs(accuracy - 0.5) <= reelProfile(fight.rarity).width / 2;
+}
+export function isPerfectHit(fight, accuracy) {
+  return Math.abs(accuracy - 0.5) <= reelProfile(fight.rarity).width * 0.2;
 }
 export function setFishPower(fight, rarity) {
   fight.rarity = rarity;
@@ -107,8 +115,22 @@ export function stepFight(fight, s, dt) {
   const rod = effectiveRod(s),
     line = LINES[s.line],
     ratio = fight.power / Math.min(rod.power, line.power);
-  fight.tension = clamp(fight.tension + ((ratio > 1 ? (ratio - 1) * 0.027 : 0) - 0.035) * dt, 0.08, 1.2);
-  fight.slack += dt * 0.014;
+  // Fish behaviour cycle: alternates between normal swimming, brief darting runs (for rarer fish),
+  // and short resting windows where the fish glides and yields line more easily.
+  const wave = Math.sin(fight.elapsed * (1.1 + (fight.rarity || 0) * 0.22) + (fight.seed || 0));
+  fight.posture =
+    (fight.rarity || 0) >= 1 && wave > 0.68
+      ? 'darting'
+      : wave < -0.45
+        ? 'resting'
+        : 'swimming';
+  const surgeDrift = fight.posture === 'darting' ? 0.012 : fight.posture === 'resting' ? -0.012 : 0;
+  fight.tension = clamp(
+    fight.tension + ((ratio > 1 ? (ratio - 1) * 0.027 : 0) - 0.035 + surgeDrift) * dt,
+    0.08,
+    1.2,
+  );
+  fight.slack += dt * (fight.posture === 'resting' ? 0.01 : 0.014);
   fight.overload = fight.tension > 0.91 ? fight.overload + dt : Math.max(0, fight.overload - dt * 0.7);
   if (fight.overload > 1.7) {
     fight.outcome = rod.power < line.power && s.rod > 0 && !s.rodBroken ? 'rod-snap' : 'line-snap';
@@ -119,19 +141,40 @@ export function reelPull(fight, s, accuracy) {
   if (fight.outcome) return fight.outcome;
   const ratio = fight.power / Math.min(effectiveRod(s).power, LINES[s.line].power);
   fight.pulls++;
-  const hit = isReelHit(fight, accuracy);
+  const hit = isReelHit(fight, accuracy),
+    perfect = hit && isPerfectHit(fight, accuracy);
   if (hit) {
-    fight.slack = Math.max(0, fight.slack - 0.16);
-    fight.progress += 0.24 / Math.max(0.85, ratio);
-    fight.tension += 0.07 + Math.max(0, ratio - 1) * 0.17;
+    fight.streak = (fight.streak || 0) + 1;
+    fight.slack = Math.max(0, fight.slack - (perfect ? 0.22 : 0.16));
+    const postureMult = fight.posture === 'resting' ? 1.15 : fight.posture === 'darting' ? 0.92 : 1;
+    const pullGain = (0.24 / Math.max(0.85, ratio)) * (perfect ? 1.28 : 1) * postureMult;
+    fight.progress += pullGain;
+    const tensionAdd = (0.07 + Math.max(0, ratio - 1) * 0.17) * (perfect ? 0.72 : 1) * (fight.posture === 'resting' ? 0.8 : 1);
+    fight.tension += tensionAdd;
+    if (perfect) {
+      fight.perfects = (fight.perfects || 0) + 1;
+      s.perfectPulls = (s.perfectPulls || 0) + 1;
+    }
+    if (fight.streak >= 3) {
+      // Three-pull rhythm burst: calms the line, eases tension and draws the fish closer.
+      fight.streak = 0;
+      fight.progress += 0.075 / Math.max(0.85, ratio);
+      fight.tension = Math.max(0.1, fight.tension - 0.09);
+      fight.slack = Math.max(0, fight.slack - 0.12);
+      fight.lastHit = 'rhythm';
+    } else {
+      fight.lastHit = perfect ? 'perfect' : 'good';
+    }
   } else {
+    fight.streak = 0;
+    fight.lastHit = 'miss';
     fight.misses++;
     fight.progress = Math.max(0, fight.progress - 0.035);
-    fight.tension += 0.19 + Math.max(0, ratio - 1) * 0.12;
+    fight.tension += 0.19 + Math.max(0, ratio - 1) * 0.12 + (fight.posture === 'darting' ? 0.04 : 0);
     fight.slack += 0.13;
   }
   if (s.rod > 0 && !s.rodBroken) {
-    s.rodCondition = Math.max(0, s.rodCondition - (hit ? 0.25 : 0.9));
+    s.rodCondition = Math.max(0, s.rodCondition - (hit ? (perfect ? 0.18 : 0.25) : 0.9));
     if (s.rodCondition <= 0) {
       fight.outcome = 'rod-snap';
       return fight.outcome;

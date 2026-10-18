@@ -1,6 +1,6 @@
 import * as T from './assets/three.module.js';
-import {hookGeometry, baitModel} from './scenery.js?v=8';
-import {lineLook} from './looks.js?v=8';
+import {hookGeometry, baitModel} from './scenery.js?v=10';
+import {lineLook} from './looks.js?v=10';
 // Physical tackle: a constrained Verlet line drawn as a camera-facing ribbon, a
 // spring-buoyant bobber that sits *in* the water, bite plunges, and a hooked fish
 // that drags the float against the line while the angler reels.

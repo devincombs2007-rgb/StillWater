@@ -2628,3 +2628,165 @@ body.intro-done #title-screen {
   color: var(--cream);
   background: #e4b98522;
 }
+
+/* v1.7 Sanctuary Chronicles, Tide Requests, Perfect Pull Zone & Field Note Lore */
+.quest-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.goal-mode-btn {
+  background: #e4b98518;
+  border: 1px solid #d7b58944;
+  border-radius: 12px;
+  color: var(--gold);
+  font-size: 8px;
+  letter-spacing: 0.8px;
+  padding: 3px 7px;
+  white-space: nowrap;
+}
+.goal-mode-btn:hover {
+  background: #e4b9852e;
+}
+#quest-title {
+  cursor: pointer;
+}
+#quest-title:hover {
+  color: var(--gold);
+}
+#perfect-zone {
+  position: absolute;
+  left: 30%;
+  width: 40%;
+  height: 100%;
+  background: #f1ca82aa;
+  box-shadow: 0 0 8px #f1ca8288;
+  pointer-events: none;
+}
+#sweet-zone.resting {
+  background: #7bc9b3aa;
+}
+#sweet-zone.darting {
+  background: #d8976faa;
+}
+.species-lore {
+  font: italic 13px/1.6 Georgia, serif !important;
+  color: #dce4d6 !important;
+  margin: 10px auto 14px !important;
+}
+.card-lore {
+  font: italic 10px/1.45 Georgia, serif !important;
+  color: #c7d5cc !important;
+  margin: 6px 4px 4px !important;
+}
+.tide-request-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 16px;
+  margin: 0 0 20px;
+  border: 1px solid #e4b98544;
+  border-radius: 11px;
+  background: linear-gradient(90deg, #e4b98514, #58b9a70d);
+}
+.tide-request-banner strong {
+  display: block;
+  font: 16px Georgia, serif;
+  color: var(--cream);
+  margin: 4px 0 3px;
+}
+.tide-request-banner small {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+}
+.tide-badge {
+  flex-shrink: 0;
+  padding: 6px 11px;
+  border-radius: 20px;
+  border: 1px solid #e4b98566;
+  background: #e4b98520;
+  color: var(--gold);
+  font-size: 10px;
+  letter-spacing: 0.8px;
+}
+.chronicles-list {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0 22px;
+}
+.chronicle-card {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #91ada408;
+}
+.chronicle-card.active {
+  border-color: #e4b98566;
+  background: #e4b9850f;
+}
+.chronicle-card.done {
+  border-color: #7bc9b344;
+  background: #7bc9b308;
+}
+.chronicle-card.locked {
+  opacity: 0.52;
+}
+.chronicle-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.chronicle-status {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.6px;
+}
+.chronicle-card h3 {
+  font: 20px Georgia, serif;
+  margin: 8px 0 10px;
+  font-weight: normal;
+}
+.chronicle-quote {
+  margin: 8px 0 12px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid #e4b98566;
+  font: italic 12px/1.6 Georgia, serif;
+  color: #dce4d6;
+}
+.chronicle-quote cite {
+  display: block;
+  font: normal 9px Arial, sans-serif;
+  letter-spacing: 1.2px;
+  color: var(--gold);
+  margin-top: 5px;
+  text-transform: uppercase;
+}
+.chronicle-obj {
+  font-size: 11px !important;
+  margin: 6px 0 0 !important;
+}
+.chronicle-claim {
+  margin-top: 14px;
+  min-height: 44px;
+  font-size: 12px;
+}
+
+/* v1.8 6-Tier Video Settings & Ray-Tracing Controls */
+.video-tiers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.video-tiers button {
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .video-tiers {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

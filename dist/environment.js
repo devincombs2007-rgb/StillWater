@@ -1,9 +1,10 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture} from './textures.js?v=8';
-import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=8';
-import {BOATS} from './economy.js?v=8';
-import {createLand, landHeight as regionLand, landDistance} from './land.js?v=8';
-import {createAmbience} from './ambience.js?v=8';
+import {surfaceTexture, normalTexture} from './textures.js?v=10';
+import {applyRayTracedShading} from './models.js?v=10';
+import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=10';
+import {BOATS} from './economy.js?v=10';
+import {createLand, landHeight as regionLand, landDistance} from './land.js?v=10';
+import {createAmbience} from './ambience.js?v=10';
 import {
   broadleafGeometry,
   pineGeometry,
@@ -17,7 +18,7 @@ import {
   flapGull,
   coralGeometry,
   lilyPadGeometry,
-} from './scenery.js?v=8';
+} from './scenery.js?v=10';
 const TAU = Math.PI * 2;
 const IMPULSES = 16;
 // Coherent surface model. The GLSL and JS height functions are kept identical so the
@@ -46,6 +47,8 @@ export function createWater(parent) {
     wind = 0;
   const events = [];
   const impulses = Array.from({length: IMPULSES}, () => new T.Vector4(0, 0, -100, 0));
+  const fallbackRefl = new T.DataTexture(new Uint8Array([20, 48, 56, 255]), 1, 1, T.RGBAFormat);
+  fallbackRefl.needsUpdate = true;
   const uniforms = {
     time: {value: 0},
     ocean: {value: 0},
@@ -65,6 +68,10 @@ export function createWater(parent) {
     reefShoal: {value: 0},
     current: {value: 0},
     biolume: {value: 0},
+    // Real-time planar ray-traced reflection texture & projection matrix.
+    reflTex: {value: fallbackRefl},
+    reflMatrix: {value: new T.Matrix4()},
+    rtRefl: {value: 0},
     // Land under the water for shallows and shore foam (set by createEnvironment).
     shoreTex: {value: new T.DataTexture(new Uint8Array([0]), 1, 1, T.RedFormat)},
     shoreBox: {value: new T.Vector4(-130, -180, 260, 230)},
@@ -76,39 +83,64 @@ export function createWater(parent) {
     for(int i=0;i<${IMPULSES};i++){float age=time-impulses[i].z;float d=length(p-impulses[i].xy);
       if(age>0.&&age<8.)h+=sin(d*6.-age*8.)*exp(-pow(d-age*2.8,2.)*.7)*exp(-age*.65)*impulses[i].w;}
     return h;}`;
-  // Horizontal distance from the nearest freshwater bank edge into open water.
   // Land height under the water, baked by land.js for the current region (-4..4 in 0..1).
   const bank = `uniform sampler2D shoreTex;uniform vec4 shoreBox;
     float landUnder(vec2 q){vec2 uv=(q-shoreBox.xy)/shoreBox.zw;if(uv.x<0.||uv.y<0.||uv.x>1.||uv.y>1.)return -4.;return texture2D(shoreTex,uv).r*8.-4.;}`;
   const mat = new T.ShaderMaterial({
     uniforms,
     side: T.DoubleSide,
-    vertexShader: `uniform float time;uniform float ocean;uniform float swell;uniform vec4 impulses[${IMPULSES}];varying vec3 p;varying vec3 normalW;${wave}
+    vertexShader: `uniform float time;uniform float ocean;uniform float swell;uniform mat4 reflMatrix;uniform vec4 impulses[${IMPULSES}];varying vec3 p;varying vec3 normalW;varying vec4 vReflUv;${wave}
       void main(){vec3 v=position;v.y=height(v.xz);float e=.08;
         normalW=normalize(vec3(height(v.xz-vec2(e,0.))-height(v.xz+vec2(e,0.)),2.*e,height(v.xz-vec2(0.,e))-height(v.xz+vec2(0.,e))));
-        p=v;gl_Position=projectionMatrix*modelViewMatrix*vec4(v,1.);}`,
+        p=v;vReflUv=reflMatrix*vec4(v.x,0.,v.z,1.);gl_Position=projectionMatrix*modelViewMatrix*vec4(v,1.);}`,
     fragmentShader: `uniform float time;uniform float ocean;uniform float rain;uniform vec3 skyTop;uniform vec3 skyHorizon;uniform vec3 sunDir;uniform vec3 sunColor;
-      uniform vec3 fogColor;uniform float fogDensity;uniform float light;uniform float detail;uniform vec3 tint;uniform float tintAmount;uniform float reefShoal;uniform float current;uniform float biolume;varying vec3 p;varying vec3 normalW;${bank}
-      vec2 ripple(vec2 q,float t){return vec2(sin(q.x*3.1+q.y*1.3+t*1.9)+sin(q.x*5.7-q.y*4.1-t*2.7)*.5+sin(q.y*9.3+q.x*.7+t*3.9)*.25,
-        cos(q.y*2.9-q.x*1.7+t*1.6)+cos(q.y*6.3+q.x*3.9-t*2.3)*.5+cos(q.x*8.7-q.y*1.1+t*4.3)*.25);}
+      uniform vec3 fogColor;uniform float fogDensity;uniform float light;uniform float detail;uniform vec3 tint;uniform float tintAmount;uniform float reefShoal;uniform float current;uniform float biolume;
+      uniform sampler2D reflTex;uniform float rtRefl;varying vec3 p;varying vec3 normalW;varying vec4 vReflUv;${bank}
+      vec2 ripple(vec2 q,float t){return vec2(sin(q.x*3.1+q.y*1.3+t*1.9)+sin(q.x*5.7-q.y*4.1-t*2.7)*.5+sin(q.y*9.3+q.x*.7+t*3.9)*.25+sin(q.x*14.1-q.y*11.7+t*5.1)*.12,
+        cos(q.y*2.9-q.x*1.7+t*1.6)+cos(q.y*6.3+q.x*3.9-t*2.3)*.5+cos(q.x*8.7-q.y*1.1+t*4.3)*.25+cos(q.y*13.3+q.x*12.1-t*4.7)*.12);}
+      float causticPattern(vec2 q,float t){
+        float a=sin(q.x*3.2+sin(q.y*2.7+t*1.1))+sin(q.y*3.5+sin(q.x*2.3-t*.9));
+        float b=sin(q.x*5.8-q.y*4.3+t*1.6)+cos(q.y*6.1+q.x*4.9-t*1.3);
+        return pow(max(0.,1.-abs(a)*.55),6.)+pow(max(0.,1.-abs(b)*.55),8.)*.5;
+      }
       void main(){vec3 view=cameraPosition-p;float dist=length(view);view/=dist;
-        vec2 r=detail>.5?ripple(p.xz,time)*(.035+rain*.05)*(1.-smoothstep(12.,70.,dist)):vec2(0.);
+        vec2 r=detail>.5?ripple(p.xz,time)*(.036+rain*.05)*(1.-smoothstep(14.,78.,dist)):vec2(0.);
         vec3 n=normalize(normalW+vec3(r.x,0.,r.y));
-        if(detail>.5&&rain>.02&&dist<40.){vec2 g=p.xz*1.7;vec2 id=floor(g);vec2 c=fract(g)-.5;float h=fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453);
+        if(detail>.5&&rain>.02&&dist<42.){vec2 g=p.xz*1.7;vec2 id=floor(g);vec2 c=fract(g)-.5;float h=fract(sin(dot(id,vec2(12.9898,78.233)))*43758.5453);
           c-=(vec2(fract(h*7.13),fract(h*13.7))-.5)*.5;float ph=fract(time*.85+h);float d=length(c),rad=ph*.42;
-          float ring=sin((d-rad)*70.)*smoothstep(.07,0.,abs(d-rad))*(1.-ph);n=normalize(n+vec3(c.x,0.,c.y)/max(d,.02)*ring*rain*.35*(1.-dist/40.));}
-        float facing=max(0.,dot(view,n));float fres=.03+.97*pow(1.-facing,5.);
+          float ring=sin((d-rad)*70.)*smoothstep(.07,0.,abs(d-rad))*(1.-ph);n=normalize(n+vec3(c.x,0.,c.y)/max(d,.02)*ring*rain*.35*(1.-dist/42.));}
+        float facing=max(0.,dot(view,n));float fres=.028+.972*pow(1.-facing,5.);
         vec3 refl=reflect(-view,n);float up=clamp(refl.y,0.,1.);
         vec3 sky=mix(skyHorizon,skyTop,pow(up,.55));
-        vec3 deep=mix(vec3(.03,.13,.13),vec3(.015,.11,.18),ocean),shallow=mix(vec3(.12,.3,.24),vec3(.06,.38,.42),ocean);
-        float lh=landUnder(p.xz);float shore=smoothstep(-.75,-.2,lh);float lap=(1.-smoothstep(0.,.09,abs(lh+.06+.025*sin(p.z*.9+p.x*.4+time*.8))))*step(-.6,lh);
-        vec3 body=mix(deep,shallow,.25+.2*sin(p.x*.14+p.z*.18)+shore*.55);
-        body=mix(body,vec3(.42,.43,.3),shore*shore*.55);body=mix(body,tint,tintAmount);float shoal=reefShoal*smoothstep(.15,.75,sin(p.x*.13+sin(p.z*.11)*2.)*sin(p.z*.09+p.x*.05)+.25);body=mix(body,vec3(.45,.78,.7),shoal*.55);
-        vec3 color=mix(body*light,sky,clamp(fres*.85+.08,0.,1.));
-        float sd0=max(0.,dot(refl,sunDir));float spec=(pow(sd0,mix(260.,520.,ocean))*mix(1.8,1.1,ocean)+pow(sd0,40.)*.05)*(1.-smoothstep(25.,90.,dist)*.5);
+        // Ray-traced planar mirror reflection of mountains, trees, cottages, boats, and angler.
+        if(rtRefl>.5&&vReflUv.w>0.){
+          vec2 ruv=vReflUv.xy/vReflUv.w+n.xz*mix(.075,.14,ocean)/(1.+dist*.03);
+          float edge=smoothstep(.01,.1,ruv.x)*smoothstep(.99,.9,ruv.x)*smoothstep(.01,.1,ruv.y)*smoothstep(.99,.9,ruv.y);
+          if(edge>0.){
+            vec3 rtCol=texture2D(reflTex,clamp(ruv,.002,.998)).rgb;
+            sky=mix(sky,rtCol,edge*.88);
+          }
+        }
+        vec3 deep=mix(vec3(.028,.125,.13),vec3(.012,.105,.175),ocean),shallow=mix(vec3(.12,.31,.25),vec3(.06,.39,.43),ocean);
+        float lh=landUnder(p.xz);float shore=smoothstep(-.82,-.18,lh);float lap=(1.-smoothstep(0.,.09,abs(lh+.06+.025*sin(p.z*.9+p.x*.4+time*.8))))*step(-.6,lh);
+        vec3 body=mix(deep,shallow,.25+.2*sin(p.x*.14+p.z*.18)+shore*.58);
+        body=mix(body,vec3(.42,.43,.3),shore*shore*.55);body=mix(body,tint,tintAmount);
+        float shoal=reefShoal*smoothstep(.15,.75,sin(p.x*.13+sin(p.z*.11)*2.)*sin(p.z*.09+p.x*.05)+.25);body=mix(body,vec3(.45,.78,.7),shoal*.55);
+        // Ray-marched underwater caustics on the shallow lakebed and coral shoals.
+        if(detail>.5&&(shore>.02||shoal>.02)&&dist<55.){
+          vec2 refr=p.xz+n.xz*max(0.,-lh)*.45;
+          float caus=causticPattern(refr,time)*(shore*.75+shoal*.9)*(1.-smoothstep(18.,55.,dist));
+          body+=sunColor*caus*.22*max(.25,sunDir.y);
+        }
+        // Subsurface wave scattering (SSS): emerald/turquoise sun transmission through wave crests.
+        float sssDot=max(0.,dot(view,normalize(vec3(-sunDir.x,.22,-sunDir.z)+n*.65)));
+        vec3 sssCol=mix(vec3(.08,.48,.42),vec3(.06,.64,.62),ocean)*pow(sssDot,3.2)*smoothstep(-.04,.26,p.y)*(0.45+0.55*rtRefl)*max(.2,sunDir.y+.15);
+        vec3 color=mix((body+sssCol)*light,sky,clamp(fres*.88+.06,0.,1.));
+        float sd0=max(0.,dot(refl,sunDir));
+        float spec=(pow(sd0,mix(280.,560.,ocean))*mix(1.85,1.15,ocean)+pow(sd0,1400.)*2.2*detail+pow(sd0,36.)*.055)*(1.-smoothstep(25.,95.,dist)*.5);
         color+=sunColor*spec*smoothstep(-.05,.12,sunDir.y);
-        float crest=ocean*smoothstep(.24,.42,p.y)*.35+lap*(.55+.45*sin(p.z*2.3+time*1.7))*.3;
-        color+=crest*vec3(.75,.82,.8)*max(.35,light);
+        float crest=ocean*smoothstep(.24,.42,p.y)*.35+lap*(.55+.45*sin(p.z*2.3+time*1.7))*.32;
+        color+=crest*vec3(.76,.83,.81)*max(.35,light);
         // Fernwater's current: foam streaks drifting downstream (toward the angler).
         if(current>.01){float streak=pow(.5+.5*sin(p.x*1.9+sin(p.z*.35+p.x*.2)*1.6),14.)*(.5+.5*sin((p.z-time*1.7)*.8+sin(p.x*.7)*2.));color+=streak*current*.12*max(.4,light)*(1.-smoothstep(20.,60.,dist));}
         // Starlit Cove: specks of blue bioluminescence that twinkle at night.
@@ -137,15 +169,26 @@ export function createWater(parent) {
     }
     return h;
   }
+  const WATER_GRIDS = {
+    'ultra-low': [128, 104],
+    low: [160, 130],
+    medium: [192, 160],
+    high: [240, 200],
+    'very-high': [280, 230],
+    ultra: [336, 280],
+    battery: [140, 116],
+    balanced: [192, 160],
+    crisp: [240, 200],
+  };
   return {
     mesh,
     height,
     uniforms,
-    setResolution(ultra) {
-      const cols = ultra ? 300 : 192;
+    setResolution(quality) {
+      const [cols, rows] = quality === true ? [300, 250] : WATER_GRIDS[quality] || [192, 160];
       if (mesh.geometry.parameters?.widthSegments === cols) return;
       mesh.geometry.dispose();
-      mesh.geometry = waterGrid(cols, ultra ? 250 : 160);
+      mesh.geometry = waterGrid(cols, rows);
     },
     impulse(x, z, t, power = 0.22) {
       events.push({x, z, time: t, power});
@@ -172,10 +215,12 @@ export function createWater(parent) {
     },
   };
 }
-// Wind sway injected into standard materials; instanced plants sway out of phase.
+// Wind sway injected into standard materials; chains with applyRayTracedShading.
 const sway = {time: {value: 0}, wind: {value: 0.4}};
 export function addSway(material, amount, base = 0) {
-  material.onBeforeCompile = shader => {
+  const prev = material.onBeforeCompile;
+  material.onBeforeCompile = (shader, renderer) => {
+    if (prev) prev(shader, renderer);
     shader.uniforms.swayTime = sway.time;
     shader.uniforms.swayWind = sway.wind;
     shader.vertexShader = shader.vertexShader
@@ -194,7 +239,8 @@ export function addSway(material, amount, base = 0) {
         transformed.z += sw * ${(amount * 0.4).toFixed(3)} * (.35 + swayWind) * lift;`,
       );
   };
-  material.customProgramCacheKey = () => 'sway' + amount + base;
+  const prevKey = material.customProgramCacheKey?.bind(material);
+  material.customProgramCacheKey = () => (prevKey ? prevKey() : '') + ':sway' + amount + base;
   return material;
 }
 export function updateSway(t, windy) {
@@ -202,9 +248,10 @@ export function updateSway(t, windy) {
   sway.wind.value += ((windy ? 1.1 : 0.35) - sway.wind.value) * 0.01;
 }
 const BOX = new T.BoxGeometry(1, 1, 1),
-  CYL = new T.CylinderGeometry(1, 1, 1, 12);
+  CYL = new T.CylinderGeometry(1, 1, 1, 16);
 BOX.userData.shared = CYL.userData.shared = true;
-const bmat = (color, extra = {}) => new T.MeshStandardMaterial({color, roughness: 0.85, ...extra});
+const bmat = (color, extra = {}) =>
+  applyRayTracedShading(new T.MeshPhysicalMaterial({color, roughness: 0.78, ...extra}), 0.06);
 function bmesh(g, m, p, sc, par) {
   const o = new T.Mesh(g, m);
   o.position.set(...p);
@@ -213,9 +260,9 @@ function bmesh(g, m, p, sc, par) {
   return o;
 }
 // Lofted skiff hull: transom stern, rising sheer to a pointed bow, painted bottom and
-// a boot stripe at the waterline, with gunwales, floorboards and thwarts inside.
-const hullStations = 26,
-  hullRing = 16;
+// a boot stripe at the waterline, with gunwales, ribs, floorboards, oars, and thwarts inside.
+const hullStations = 32,
+  hullRing = 20;
 function hullPoint(u, a) {
   const beam = u < 0.62 ? 0.78 + 0.22 * Math.sin((u / 0.62) * Math.PI * 0.5) : Math.pow((1 - u) / 0.38, 0.75),
     sheer = 0.62 + 0.3 * Math.pow(u, 3) - 0.04 * Math.sin(Math.PI * u),
@@ -256,7 +303,13 @@ export function boatModel(size = 1, style = 0) {
   geo.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
   geo.setIndex(index);
   geo.computeVertexNormals();
-  const hull = bmesh(geo, bmat('#ffffff', {vertexColors: true, roughness: 0.55, side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], g);
+  const hull = bmesh(
+    geo,
+    bmat('#ffffff', {vertexColors: true, roughness: 0.42, clearcoat: 0.55, clearcoatRoughness: 0.22, side: T.DoubleSide}),
+    [0, 0, 0],
+    [1, 1, 1],
+    g,
+  );
   hull.name = 'Hull';
   // Invisible lid across the gunwales: it writes depth only, after the boat and before the
   // sea, so the sea surface can never show through inside the hull as the boat rolls.
@@ -273,38 +326,70 @@ export function boatModel(size = 1, style = 0) {
   lid.renderOrder = 1;
   lid.name = 'Hull water mask';
   g.add(lid);
-  const woodLight = bmat('#b39f7b', {map: surfaceTexture('wood')}),
-    woodDark = bmat('#7e6849', {map: surfaceTexture('wood')});
+  const woodLight = bmat('#b39f7b', {map: surfaceTexture('wood'), normalMap: normalTexture('wood'), normalScale: new T.Vector2(0.28, 0.28), roughness: 0.68}),
+    woodDark = bmat('#7e6849', {map: surfaceTexture('wood'), normalMap: normalTexture('wood'), normalScale: new T.Vector2(0.32, 0.32), roughness: 0.72}),
+    brass = bmat('#c9a86a', {metalness: 0.85, roughness: 0.24});
   for (const sideSign of [-1, 1]) {
     const rail = [];
     for (let i = 0; i <= hullStations; i++) {
       const p = hullPoint(i / hullStations, sideSign < 0 ? 0 : 1);
       rail.push(new T.Vector3(p[0], p[1] + 0.02, p[2]));
     }
-    bmesh(new T.TubeGeometry(new T.CatmullRomCurve3(rail), 40, 0.045, 6, false), woodDark, [0, 0, 0], [1, 1, 1], g);
+    bmesh(new T.TubeGeometry(new T.CatmullRomCurve3(rail), 44, 0.048, 8, false), woodDark, [0, 0, 0], [1, 1, 1], g);
+  }
+  // Curved interior hull ribs along the stations.
+  for (let r = 1; r <= 6; r++) {
+    const u = 0.14 + r * 0.11,
+      ribPts = [];
+    for (let j = 1; j < hullRing; j++) {
+      const p = hullPoint(u, j / hullRing);
+      ribPts.push(new T.Vector3(p[0], p[1] + 0.018, p[2] * 0.96));
+    }
+    bmesh(new T.TubeGeometry(new T.CatmullRomCurve3(ribPts), 14, 0.018, 5, false), woodDark, [0, 0, 0], [1, 1, 1], g);
   }
   bmesh(BOX, woodLight, [-0.15, 0.22, 0], [3.1, 0.06, 1.25], g);
   for (let k = -3; k <= 3; k++) bmesh(BOX, woodDark, [-0.15, 0.255, k * 0.17], [3.05, 0.012, 0.02], g);
   for (const x of [-1.15, 0.95]) bmesh(BOX, woodDark, [x, 0.42, 0], [0.34, 0.07, 1.62 - Math.abs(x) * 0.18], g);
+  // Bow stempost, brass cleat and coiled mooring line.
   bmesh(BOX, woodDark, [1.95, 0.85, 0], [0.12, 0.08, 0.08], g);
+  bmesh(BOX, brass, [1.72, 0.78, 0], [0.18, 0.035, 0.045], g);
+  const ropeCoil = bmesh(new T.TorusGeometry(0.11, 0.022, 6, 16), bmat('#cbb991', {roughness: 0.9}), [1.42, 0.28, 0.18], [1, 1, 1], g);
+  ropeCoil.rotation.x = Math.PI / 2;
+  if (style === 0) {
+    // Oarlocks and stowed wooden oars on the cedar skiff.
+    for (const side of [-1, 1]) {
+      bmesh(new T.TorusGeometry(0.035, 0.008, 6, 12, Math.PI), brass, [-0.1, 0.69, side * 0.88], [1, 1, 1], g);
+      const oarShaft = bmesh(CYL, woodLight, [-0.15, 0.67, side * 0.78], [0.022, 1.85, 0.022], g);
+      oarShaft.rotation.z = Math.PI / 2;
+      oarShaft.rotation.y = side * 0.06;
+      const blade = bmesh(BOX, woodDark, [-0.95, 0.66, side * 0.74], [0.48, 0.014, 0.11], g);
+      blade.rotation.x = 0.25 * side;
+    }
+  }
   if (style > 0) {
-    bmesh(BOX, bmat('#e0dccc'), [-1.3, 0.8, 0], [1.1, 1.3, 1.05], g);
-    bmesh(BOX, bmat('#8fadaf', {metalness: 0.3, roughness: 0.15}), [-1.3, 1.1, 0.54], [0.8, 0.55, 0.03], g);
+    bmesh(BOX, bmat('#e0dccc', {roughness: 0.55}), [-1.3, 0.8, 0], [1.1, 1.3, 1.05], g);
+    bmesh(BOX, bmat('#8fadaf', {metalness: 0.4, roughness: 0.12, clearcoat: 0.9}), [-1.3, 1.1, 0.54], [0.8, 0.55, 0.03], g);
+    bmesh(BOX, bmat('#8fadaf', {metalness: 0.4, roughness: 0.12, clearcoat: 0.9}), [-1.3, 1.1, -0.54], [0.8, 0.55, 0.03], g);
     bmesh(BOX, bmat('#bdc9bd'), [-1.3, 1.53, 0], [1.45, 0.12, 1.5], g);
+    // Lifebuoy ring mounted on the cabin wall and port/starboard navigation lamps.
+    const buoy = bmesh(new T.TorusGeometry(0.18, 0.045, 8, 18), bmat('#d95b43', {roughness: 0.45}), [-0.73, 0.82, 0], [1, 1, 1], g);
+    buoy.rotation.y = Math.PI / 2;
+    bmesh(new T.SphereGeometry(0.04, 10, 8), bmat('#d93829', {emissive: '#ff3b28', emissiveIntensity: 0.6}), [-1.1, 1.48, -0.74], [1, 1, 1], g);
+    bmesh(new T.SphereGeometry(0.04, 10, 8), bmat('#2fa866', {emissive: '#38e57d', emissiveIntensity: 0.6}), [-1.1, 1.48, 0.74], [1, 1, 1], g);
   }
   if (style === 2) {
-    bmesh(CYL, bmat('#bfcabc', {metalness: 0.6}), [-1.3, 2.05, 0], [0.035, 1.05, 0.035], g);
+    bmesh(CYL, bmat('#bfcabc', {metalness: 0.7, roughness: 0.25}), [-1.3, 2.05, 0], [0.035, 1.05, 0.035], g);
     bmesh(BOX, bmat('#bac9c5'), [-1.3, 2.58, 0], [0.65, 0.08, 0.4], g);
     for (const side of [-1, 1]) {
       for (const x of [-1.5, -0.6, 0.6, 1.5])
-        bmesh(CYL, bmat('#bdc9bb', {metalness: 0.6}), [x, 0.5, side * 0.74], [0.025, 0.65, 0.025], g);
-      bmesh(BOX, bmat('#bfcbbb', {metalness: 0.55}), [0, 0.82, side * 0.74], [3.3, 0.035, 0.035], g);
+        bmesh(CYL, bmat('#bdc9bb', {metalness: 0.7, roughness: 0.25}), [x, 0.5, side * 0.74], [0.025, 0.65, 0.025], g);
+      bmesh(BOX, bmat('#bfcbbb', {metalness: 0.65, roughness: 0.25}), [0, 0.82, side * 0.74], [3.3, 0.035, 0.035], g);
     }
   }
   g.scale.setScalar(size);
   return g;
 }
-const GRASS_MAX = 4200;
+const GRASS_MAX = 5000;
 export function createEnvironment(parent, state, water) {
   const fresh = new T.Group(),
     salt = new T.Group(),
@@ -315,7 +400,7 @@ export function createEnvironment(parent, state, water) {
   // there is no strip of land to see past or under. The water reads its shallows from it.
   const land = createLand(common, state.region || 0, state.quality);
   if (water.uniforms.shoreTex) water.uniforms.shoreTex.value = land.shoreTexture;
-  const mat = (color, extra = {}) => new T.MeshStandardMaterial({color, roughness: 0.85, ...extra});
+  const mat = (color, extra = {}) => applyRayTracedShading(new T.MeshStandardMaterial({color, roughness: 0.85, ...extra}), 0.08);
   const sphere = new T.SphereGeometry(1, 16, 12),
     box = new T.BoxGeometry(1, 1, 1),
     cyl = new T.CylinderGeometry(1, 1, 1, 12);
@@ -348,7 +433,7 @@ export function createEnvironment(parent, state, water) {
   const ground = (x, z) => regionLand(0, x, z);
   // Banks of broadleaf trees mixed with conifers; a few shared variants are instanced so
   // the whole wood stays a handful of draw calls.
-  const foliage = addSway(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.88}), 0.025, 1.4),
+  const foliage = addSway(applyRayTracedShading(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.84}), 0.32), 0.025, 1.4),
     matrix = new T.Object3D(),
     treeKinds = [0, 1, 2, 3, 4].map(k => broadleafGeometry(k + 1)).concat([0, 1, 2].map(k => pineGeometry(k + 11))),
     placements = treeKinds.map(() => []);
@@ -387,7 +472,8 @@ export function createEnvironment(parent, state, water) {
   }
   // Lily pads drift in Willow Lake's shallows and ride the real wave height.
   const lilyGeo = [1, 2, 3].map(k => lilyPadGeometry(k)),
-    lilies = lilyGeo.map(g => new T.InstancedMesh(g, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.6, side: T.DoubleSide}), 12)),
+     lilyMat = applyRayTracedShading(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.55, side: T.DoubleSide}), 0.25),
+    lilies = lilyGeo.map(g => new T.InstancedMesh(g, lilyMat, 12)),
     lilySpots = [];
   for (let i = 0; i < 36; i++) {
     const side = i % 2 ? -1 : 1,
@@ -402,7 +488,15 @@ export function createEnvironment(parent, state, water) {
   }
   fresh.add(lilyGroup);
   // Shoreline boulders: weathered, mossy on top, settled into the ground.
-  const stoneMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}),
+  const stoneMat = applyRayTracedShading(
+      new T.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.92,
+        normalMap: normalTexture('stone'),
+        normalScale: new T.Vector2(0.4, 0.4),
+      }),
+      0.04,
+    ),
     stoneKinds = [1, 2, 3, 4].map(k => rockGeometry(k)),
     stonePlacements = stoneKinds.map(() => []);
   for (let i = 0; i < 40; i++) {
@@ -471,7 +565,10 @@ export function createEnvironment(parent, state, water) {
   roadGeo.setAttribute('color', new T.Float32BufferAttribute(roadCol, 3));
   roadGeo.setIndex(roadIdx);
   roadGeo.computeVertexNormals();
-  const road = new T.Mesh(roadGeo, new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95, envMapIntensity: 0.3}));
+  const road = new T.Mesh(
+    roadGeo,
+    applyRayTracedShading(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.92, envMapIntensity: 0.35}), 0.02),
+  );
   road.receiveShadow = true;
   fresh.add(road);
   // Cottages stand back from the road on the inland side, facing it and the lake.
@@ -514,7 +611,7 @@ export function createEnvironment(parent, state, water) {
     island = new T.Group(),
     reef = new T.Group();
   salt.add(harbor, island, reef);
-  const coralMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.7, side: T.DoubleSide});
+  const coralMat = applyRayTracedShading(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.65, side: T.DoubleSide}), 0.3);
   addSway(coralMat, 0.02, 0.6);
   // Staghorn (seed % 3 === 0) and brain corals (seed % 3 === 1); sea fans stay out of sight.
   for (const [i, seed] of [3, 6, 9, 1, 4, 7].entries()) {
@@ -537,7 +634,7 @@ export function createEnvironment(parent, state, water) {
     reef.add(heads);
   }
 
-  const palmMat = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.8, side: T.DoubleSide});
+  const palmMat = applyRayTracedShading(new T.MeshStandardMaterial({vertexColors: true, roughness: 0.78, side: T.DoubleSide}), 0.28);
   addSway(palmMat, 0.03, 3);
   for (let i = 0; i < 11; i++) {
     const p = new T.Mesh(palmGeometry(i + 3), palmMat);
@@ -546,7 +643,13 @@ export function createEnvironment(parent, state, water) {
     island.add(p);
   }
   // A stone quay the waterfront stands on (the buildings used to stand on open water).
-  const quay = mesh(box, mat('#8d8a7d', {roughness: 0.95}), [-13.5, 0.4, -83], [50, 1.6, 15], harbor);
+  const quay = mesh(
+    box,
+    mat('#8d8a7d', {roughness: 0.92, normalMap: normalTexture('stone'), normalScale: new T.Vector2(0.35, 0.35)}),
+    [-13.5, 0.4, -83],
+    [50, 1.6, 15],
+    harbor,
+  );
   quay.receiveShadow = true;
   mesh(box, mat('#6f6d63', {roughness: 0.95}), [-13.5, 1.22, -75.6], [50, 0.12, 0.5], harbor);
   for (let k = 0; k < 12; k++) mesh(cyl, mat('#4c4a43'), [-37 + k * 4.3, 0.3, -75.3], [0.18, 1.4, 0.18], harbor);
@@ -570,7 +673,7 @@ export function createEnvironment(parent, state, water) {
       // Mainsail and jib as gently billowing curved panels.
       // pts: [head, tack, clew]; the panel narrows from the foot to the head.
       const sail = ([head, tack, clew], belly) => {
-        const geo = new T.PlaneGeometry(1, 1, 8, 8),
+        const geo = new T.PlaneGeometry(1, 1, 10, 10),
           p = geo.attributes.position;
         for (let k = 0; k < p.count; k++) {
           const u = p.getX(k) + 0.5,
@@ -652,7 +755,7 @@ export function createEnvironment(parent, state, water) {
   titleShore.visible = false;
   common.add(titleShore);
   terrain(17, 23, 18, 22, 1.4, '#b5ae8e', titleShore);
-  const shoreRocks = new T.InstancedMesh(rockGeometry(21, false, ['#9d9a84', '#b3ae96']), new T.MeshStandardMaterial({vertexColors: true, roughness: 0.95}), 18);
+  const shoreRocks = new T.InstancedMesh(rockGeometry(21, false, ['#9d9a84', '#b3ae96']), stoneMat, 18);
   for (let i = 0; i < 18; i++) {
     const x = 11 + (i % 6) * 1.4 + Math.sin(i * 3.1) * 0.4,
       z = 18 + Math.floor(i / 6) * 2 + Math.cos(i * 2.3) * 0.5;
@@ -692,7 +795,18 @@ export function createEnvironment(parent, state, water) {
     // Grass density follows the graphics setting; placements are random, so any prefix of
     // the instances is an even scatter.
     setDetail(quality) {
-      grass.count = {battery: 900, balanced: 1800, crisp: 2600, ultra: GRASS_MAX}[quality] || 1800;
+      grass.count =
+        ({
+          'ultra-low': 450,
+          low: 900,
+          medium: 1800,
+          high: 2600,
+          'very-high': 3600,
+          ultra: GRASS_MAX,
+          battery: 900,
+          balanced: 1800,
+          crisp: 2600,
+        })[quality] || 1800;
       land.setDetail(quality);
     },
     update(dt, t, region, c) {

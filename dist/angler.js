@@ -1,8 +1,8 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture} from './textures.js?v=8';
-import {APPAREL} from './economy.js?v=8';
-import {lathe, displace, tube, consolidate, loft} from './models.js?v=8';
-import {rodLook, lineLook} from './looks.js?v=8';
+import {surfaceTexture, normalTexture} from './textures.js?v=10';
+import {APPAREL} from './economy.js?v=10';
+import {lathe, displace, tube, consolidate, loft, applyRayTracedShading} from './models.js?v=10';
+import {rodLook, lineLook} from './looks.js?v=10';
 export const SKINS = ['#edc7a6', '#d3a37e', '#b17f5c', '#875e45', '#624735'],
   HAIRS = ['#302b29', '#65503b', '#a58455', '#352b32'],
   EYES = ['#5a3d2b', '#7a6a3a', '#4f7a4e', '#4c6f8e', '#6d7a80'],
@@ -28,22 +28,29 @@ export function createAngler(parent, state) {
   g.position.set(0, 0.3, 8.8);
   g.rotation.y = Math.PI;
   parent.add(g);
-  const std = (color, extra = {}) => new T.MeshStandardMaterial({color, roughness: 0.75, ...extra});
-  const skin = std(SKINS[state.character?.skin || 0], {roughness: 0.55}),
-    hairMat = std(HAIRS[state.character?.hair || 0], {roughness: 0.62}),
-    cloth = std('#c6bda3', {roughness: 0.9, map: surfaceTexture('cloth')}),
-    pants = std('#667d79', {roughness: 0.9, map: surfaceTexture('cloth')}),
-    shoes = std('#66594b', {roughness: 0.65}),
-    sole = std('#33302b', {roughness: 0.9}),
-    leather = std('#5a4334', {roughness: 0.55}),
-    brass = std('#c9a86a', {metalness: 0.7, roughness: 0.3}),
-    eyeWhite = std('#f4efe6', {roughness: 0.2}),
-    iris = std(EYES[state.character?.eyes || 0], {roughness: 0.15}),
-    pupil = std('#121618', {roughness: 0.08}),
-    lips = std('#b0766a', {roughness: 0.45}),
+  const std = (color, {sss = 0.1, ...extra} = {}) => {
+    const m = new T.MeshPhysicalMaterial({color, roughness: 0.72, ...extra});
+    applyRayTracedShading(m, sss);
+    return m;
+  };
+  const clothNorm = normalTexture('cloth'),
+    corkNorm = normalTexture('cork'),
+    metalNorm = normalTexture('metal');
+  const skin = std(SKINS[state.character?.skin || 0], {roughness: 0.5, clearcoat: 0.08, clearcoatRoughness: 0.45, sheen: 0.38, sheenRoughness: 0.5, sheenColor: new T.Color('#e89a84'), sss: 0.28}),
+    hairMat = std(HAIRS[state.character?.hair || 0], {roughness: 0.54, clearcoat: 0.18, clearcoatRoughness: 0.35, sheen: 0.3}),
+    cloth = std('#c6bda3', {roughness: 0.86, map: surfaceTexture('cloth'), normalMap: clothNorm, normalScale: new T.Vector2(0.26, 0.26), sheen: 0.25}),
+    pants = std('#667d79', {roughness: 0.88, map: surfaceTexture('cloth'), normalMap: clothNorm, normalScale: new T.Vector2(0.28, 0.28), sheen: 0.18}),
+    shoes = std('#66594b', {roughness: 0.52, clearcoat: 0.25, clearcoatRoughness: 0.35}),
+    sole = std('#33302b', {roughness: 0.92}),
+    leather = std('#5a4334', {roughness: 0.45, clearcoat: 0.3}),
+    brass = std('#c9a86a', {metalness: 0.82, roughness: 0.22, clearcoat: 0.6}),
+    eyeWhite = std('#f4efe6', {roughness: 0.12, clearcoat: 0.9}),
+    iris = std(EYES[state.character?.eyes || 0], {roughness: 0.12, clearcoat: 1}),
+    pupil = std('#121618', {roughness: 0.05, clearcoat: 1}),
+    lips = std('#b0766a', {roughness: 0.38, clearcoat: 0.22}),
     lash = std('#1d1a18', {roughness: 0.8}),
-    button = std('#e6dcc4', {roughness: 0.4}),
-    hatMat = std('#bfa27a', {roughness: 0.8, map: surfaceTexture('cloth')}),
+    button = std('#e6dcc4', {roughness: 0.32, clearcoat: 0.4}),
+    hatMat = std('#bfa27a', {roughness: 0.78, map: surfaceTexture('cloth'), normalMap: clothNorm, normalScale: new T.Vector2(0.24, 0.24)}),
     stubbleMat = new T.MeshStandardMaterial({color: HAIRS[state.character?.hair || 0], roughness: 1, transparent: true, opacity: 0.32, depthWrite: false});
   function add(geo, mat, p = [0, 0, 0], s = [1, 1, 1], par = g, r = [0, 0, 0]) {
     const m = new T.Mesh(geo, mat);
@@ -71,22 +78,26 @@ export function createAngler(parent, state) {
           [0.98, 0.096, 0.1, 0.0, x - sx * 0.004],
           [1.14, 0.108, 0.112, 0.0, x - sx * 0.01],
         ],
-        20,
+        24,
         2.2,
         false,
         true,
       ),
       pants,
     );
-    add(loft([[0.13, 0.056, 0.062, 0.0, x + sx * 0.008], [0.18, 0.053, 0.059, 0.0, x + sx * 0.008]], 18, 2.2, false, true), pants);
-    // Boot: shaped upper over a toe box and welted sole, with laces.
+    // Trouser cuff roll at the boot top.
+    add(loft([[0.13, 0.057, 0.063, 0.0, x + sx * 0.008], [0.185, 0.055, 0.061, 0.0, x + sx * 0.008]], 20, 2.2, true, true), pants);
+    // Boot: shaped upper over a toe box, welted sole, heel block, tread lugs, and brass lace eyelets.
     add(
-      loft([[0.02, 0.05, 0.11, 0.05], [0.07, 0.056, 0.12, 0.055], [0.11, 0.05, 0.085, 0.03], [0.18, 0.05, 0.055, 0.0], [0.22, 0.052, 0.056, 0.0]], 20, 2.6),
+      loft([[0.02, 0.05, 0.11, 0.05], [0.07, 0.056, 0.12, 0.055], [0.11, 0.05, 0.085, 0.03], [0.18, 0.05, 0.055, 0.0], [0.22, 0.052, 0.056, 0.0]], 24, 2.6),
       shoes,
       [x + sx * 0.008, 0, 0],
     );
-    add(loft([[0, 0.054, 0.117, 0.05], [0.028, 0.055, 0.118, 0.05]], 20, 2.6), sole, [x + sx * 0.008, 0, 0]);
-    for (let k = 0; k < 3; k++) add(new T.BoxGeometry(0.06, 0.007, 0.01), button, [x + sx * 0.008, 0.16 - k * 0.025, 0.06 + k * 0.022], 1, g, [-0.6, 0, 0]);
+    add(loft([[0, 0.055, 0.118, 0.05], [0.028, 0.056, 0.119, 0.05]], 22, 2.6), sole, [x + sx * 0.008, 0, 0]);
+    add(new T.BoxGeometry(0.088, 0.018, 0.065), sole, [x + sx * 0.008, 0.009, -0.025]);
+    for (let k = 0; k < 4; k++) {
+      add(new T.BoxGeometry(0.062, 0.007, 0.01), button, [x + sx * 0.008, 0.165 - k * 0.022, 0.058 + k * 0.02], 1, g, [-0.6, 0, 0]);
+    }
   }
 
   // --- Pelvis, torso and shirt ------------------------------------------------------------
@@ -104,7 +115,7 @@ export function createAngler(parent, state) {
         [1.98, 0.15, 0.095, 0.0],
         [2.0, 0.058, 0.055, 0.005],
       ],
-      30,
+      32,
       2.5,
       true,
       false,
@@ -113,26 +124,33 @@ export function createAngler(parent, state) {
   );
   torso.name = 'Torso';
   torso.userData.dynamic = true;
+  // Stitched leather belt with belt loops and brass buckle.
   add(loft([[1.235, 0.212, 0.139], [1.285, 0.207, 0.135, 0.003]], 28, 2.4, false, false), leather);
-  add(new T.BoxGeometry(0.07, 0.05, 0.02), brass, [0, 1.26, 0.141]);
-  for (let i = 0; i < 5; i++) add(sphere, button, [0, 1.34 + i * 0.12, 0.138 + Math.min(i, 3) * 0.006], [0.009, 0.009, 0.005]);
-  add(new T.BoxGeometry(0.1, 0.09, 0.01), cloth, [0.1, 1.73, 0.158], 1, g, [-0.08, 0.2, 0]);
-  add(new T.BoxGeometry(0.1, 0.022, 0.012), cloth, [0.1, 1.78, 0.16], 1, g, [-0.08, 0.2, 0]);
+  add(new T.BoxGeometry(0.072, 0.052, 0.022), brass, [0, 1.26, 0.141]);
+  for (const bx of [-0.14, 0.14]) add(new T.BoxGeometry(0.018, 0.06, 0.016), pants, [bx, 1.26, 0.13]);
+  // Front placket & buttons.
+  add(new T.BoxGeometry(0.032, 0.56, 0.006), cloth, [0, 1.58, 0.139]);
+  for (let i = 0; i < 5; i++) add(sphere, button, [0, 1.34 + i * 0.12, 0.14 + Math.min(i, 3) * 0.006], [0.009, 0.009, 0.005]);
+  for (const sx of [-1, 1]) {
+    add(new T.BoxGeometry(0.095, 0.09, 0.01), cloth, [sx * 0.1, 1.73, 0.158], 1, g, [-0.08, sx * 0.2, 0]);
+    add(new T.BoxGeometry(0.098, 0.024, 0.012), cloth, [sx * 0.1, 1.78, 0.16], 1, g, [-0.08, sx * 0.2, 0]);
+    add(sphere, button, [sx * 0.1, 1.77, 0.167], [0.006, 0.006, 0.004]);
+  }
   // Stand collar hugging the neck.
-  add(loft([[1.93, 0.088, 0.082, 0.004], [1.99, 0.073, 0.069, 0.007], [2.03, 0.066, 0.063, 0.009]], 22, 2.1, false, false), cloth);
+  add(loft([[1.93, 0.088, 0.082, 0.004], [1.99, 0.073, 0.069, 0.007], [2.03, 0.066, 0.063, 0.009]], 24, 2.1, false, false), cloth);
   // Jacket and long coat layers over the shirt for the apparel tiers.
   const jacket = new T.Group(),
     coat = new T.Group();
   g.add(jacket, coat);
-  add(loft([[1.18, 0.218, 0.145], [1.44, 0.193, 0.133, 0.012], [1.72, 0.226, 0.15, 0.022], [1.9, 0.232, 0.132]], 30, 2.5, false, false), cloth, [0, 0, 0], 1, jacket);
-  add(new T.BoxGeometry(0.01, 0.7, 0.01), brass, [0, 1.55, 0.168], 1, jacket);
-  add(loft([[1.94, 0.12, 0.1], [2.04, 0.085, 0.078]], 20, 2.2, false, false), cloth, [0, 0, 0], 1, jacket);
-  add(loft([[0.8, 0.25, 0.17], [1.0, 0.225, 0.15], [1.2, 0.215, 0.145], [1.36, 0.2, 0.136, 0.01]], 30, 2.4, false, false), cloth, [0, 0, 0], 1, coat);
+  add(loft([[1.18, 0.218, 0.145], [1.44, 0.193, 0.133, 0.012], [1.72, 0.226, 0.15, 0.022], [1.9, 0.232, 0.132]], 32, 2.5, false, false), cloth, [0, 0, 0], 1, jacket);
+  add(new T.BoxGeometry(0.012, 0.7, 0.012), brass, [0, 1.55, 0.168], 1, jacket);
+  add(loft([[1.94, 0.12, 0.1], [2.04, 0.085, 0.078]], 22, 2.2, false, false), cloth, [0, 0, 0], 1, jacket);
+  add(loft([[0.8, 0.25, 0.17], [1.0, 0.225, 0.15], [1.2, 0.215, 0.145], [1.36, 0.2, 0.136, 0.01]], 32, 2.4, false, false), cloth, [0, 0, 0], 1, coat);
   for (let i = 0; i < 3; i++) for (const sx of [-1, 1]) add(sphere, brass, [sx * 0.06, 1.3 + i * 0.15, 0.16], 0.012, coat);
 
   // --- Neck and head ---------------------------------------------------------------------
   // The head is sculpted at a 0.2-unit radius and scaled into adult proportion.
-  add(loft([[1.96, 0.066, 0.062], [2.06, 0.058, 0.056, 0.005], [2.14, 0.054, 0.052, 0.01]], 18, 2, false, false), skin);
+  add(loft([[1.96, 0.066, 0.062], [2.06, 0.058, 0.056, 0.005], [2.14, 0.054, 0.052, 0.01]], 20, 2, false, false), skin);
   const head = new T.Group();
   head.position.set(0, 2.25, 0.012);
   head.scale.setScalar(0.74);
@@ -152,14 +170,14 @@ export function createAngler(parent, state) {
     if (z > 0.5 && y > 0.22 && y < 0.36 && Math.abs(x) < 0.7) z *= 1.03; // brow ridge
     return [x, y, z];
   };
-  const skull = new T.SphereGeometry(1, 48, 36),
+  const skull = new T.SphereGeometry(1, 56, 40),
     sp = skull.attributes.position;
   for (let i = 0; i < sp.count; i++) sp.setXYZ(i, ...sculpt(sp.getX(i), sp.getY(i), sp.getZ(i)));
   skull.computeVertexNormals();
   const skullMesh = add(skull, skin, [0, 0, 0], [0.2, 0.235, 0.205], head);
   skullMesh.name = 'Head';
   skullMesh.userData.dynamic = true;
-  // Ears: a shell with a curled rim.
+  // Ears: a shell with a curled rim and earlobe.
   for (const sx of [-1, 1]) {
     add(sphere, skin, [sx * 0.196, -0.01, -0.015], [0.022, 0.058, 0.04], head, [0, sx * 0.35, 0]);
     add(new T.TorusGeometry(0.034, 0.008, 6, 16, Math.PI * 1.4), skin, [sx * 0.205, -0.005, -0.02], [1, 1.5, 1], head, [0, sx * 1.2, -0.8]);
@@ -191,7 +209,7 @@ export function createAngler(parent, state) {
     add(tube([V(ex - 0.038, 0.074, 0.178), V(ex - 0.005 * sx, 0.088, 0.19), V(ex + 0.036 * sx, 0.08, 0.18)], u => 0.009 * (1 - u * 0.45), 6), hairMat, [0, 0, 0], 1, head);
   }
   // Nose: bridge, tip and nostril wings.
-  add(loft([[0.06, 0.011, 0.01, 0.184], [0.03, 0.015, 0.014, 0.196], [-0.02, 0.021, 0.022, 0.207], [-0.05, 0.025, 0.022, 0.206], [-0.064, 0.016, 0.014, 0.2]], 16, 2.2), skin, [0, 0, 0], 1, head);
+  add(loft([[0.06, 0.011, 0.01, 0.184], [0.03, 0.015, 0.014, 0.196], [-0.02, 0.021, 0.022, 0.207], [-0.05, 0.025, 0.022, 0.206], [-0.064, 0.016, 0.014, 0.2]], 18, 2.2), skin, [0, 0, 0], 1, head);
   add(sphere, skin, [0, -0.046, 0.214], [0.021, 0.019, 0.019], head);
   for (const sx of [-1, 1]) add(sphere, skin, [sx * 0.021, -0.052, 0.203], [0.014, 0.011, 0.013], head, [0, 0, sx * 0.3]);
   // Lips: fuller centre, philtrum dip, and a slight smile.
@@ -278,8 +296,8 @@ export function createAngler(parent, state) {
   // --- Glasses --------------------------------------------------------------------------------
   const glasses = new T.Group();
   head.add(glasses);
-  const frame = std('#2b3436', {metalness: 0.4, roughness: 0.3}),
-    lens = new T.MeshStandardMaterial({color: '#1d3640', metalness: 0.6, roughness: 0.08, transparent: true, opacity: 0.78});
+  const frame = std('#2b3436', {metalness: 0.5, roughness: 0.25}),
+    lens = new T.MeshPhysicalMaterial({color: '#1d3640', metalness: 0.72, roughness: 0.04, clearcoat: 1, transparent: true, opacity: 0.82});
   for (const sx of [-1, 1]) {
     add(new T.TorusGeometry(0.047, 0.006, 6, 24), frame, [sx * 0.076, 0.026, 0.21], [1, 0.78, 1], glasses);
     add(new T.CircleGeometry(0.046, 24), lens, [sx * 0.076, 0.026, 0.209], [1, 0.78, 1], glasses);
@@ -288,8 +306,8 @@ export function createAngler(parent, state) {
   add(new T.TorusGeometry(0.018, 0.005, 5, 12, Math.PI), frame, [0, 0.034, 0.215], 1, glasses);
 
   // --- Arms: shaped upper arm and forearm (unit length, posed by IK), and jointed hands ------
-  const upperGeo = lathe([[0.066, 0], [0.074, 0.12], [0.07, 0.42], [0.058, 0.78], [0.05, 1]], 18),
-    foreGeo = lathe([[0.05, 0], [0.054, 0.16], [0.046, 0.5], [0.034, 0.92], [0.03, 1]], 16);
+  const upperGeo = lathe([[0.066, 0], [0.075, 0.14], [0.071, 0.44], [0.059, 0.78], [0.052, 0.94], [0.056, 1]], 20),
+    foreGeo = lathe([[0.051, 0], [0.055, 0.16], [0.047, 0.5], [0.035, 0.92], [0.031, 1]], 18);
   const arms = [];
   for (const side of [-1, 1]) {
     const upper = add(upperGeo, cloth),
@@ -299,8 +317,14 @@ export function createAngler(parent, state) {
       hand = new T.Group();
     hand.name = side === -1 ? 'Reeling hand' : 'Rod hand';
     g.add(hand);
+    // Field watch on the reeling wrist.
+    if (side === -1) {
+      add(new T.TorusGeometry(0.032, 0.006, 6, 18), leather, [0, 0.02, 0], 1, hand, [Math.PI / 2, 0, 0]);
+      add(new T.CylinderGeometry(0.018, 0.018, 0.008, 16), brass, [0, 0.02, 0.031], 1, hand, [Math.PI / 2, 0, 0]);
+      add(new T.CylinderGeometry(0.015, 0.015, 0.009, 16), eyeWhite, [0, 0.02, 0.032], 1, hand, [Math.PI / 2, 0, 0]);
+    }
     // Palm, four three-jointed fingers curling round a grip along local x, and a thumb.
-    add(loft([[0.03, 0.026, 0.02], [-0.02, 0.044, 0.022], [-0.07, 0.048, 0.021], [-0.095, 0.045, 0.018]], 16, 2.6), skin, [0, 0, 0], 1, hand);
+    add(loft([[0.03, 0.026, 0.02], [-0.02, 0.044, 0.022], [-0.07, 0.048, 0.021], [-0.095, 0.045, 0.018]], 18, 2.6), skin, [0, 0, 0], 1, hand);
     const fist = new T.Group(),
       open = new T.Group();
     hand.add(fist, open);
@@ -308,15 +332,15 @@ export function createAngler(parent, state) {
       const x = -0.033 + i * 0.022,
         len = i === 0 ? 0.82 : i === 3 ? 0.88 : 1;
       // Relaxed open hand: fingers gently curved, for hanging arms, the counter and waving.
-      add(tube([V(x, -0.09, 0.006), V(x, -0.09 - 0.035 * len, 0.012), V(x * 1.1, -0.09 - 0.065 * len, 0.024), V(x * 1.15, -0.09 - 0.085 * len, 0.038)], u => 0.0115 - u * 0.0025, 7), skin, [0, 0, 0], 1, open);
+      add(tube([V(x, -0.09, 0.006), V(x, -0.09 - 0.035 * len, 0.012), V(x * 1.1, -0.09 - 0.065 * len, 0.024), V(x * 1.15, -0.09 - 0.085 * len, 0.038)], u => 0.0115 - u * 0.0025, 8), skin, [0, 0, 0], 1, open);
     }
-    add(tube([V(side * 0.042, -0.025, 0.012), V(side * 0.058, -0.05, 0.03), V(side * 0.064, -0.075, 0.042)], u => 0.0135 - u * 0.003, 7), skin, [0, 0, 0], 1, open);
+    add(tube([V(side * 0.042, -0.025, 0.012), V(side * 0.058, -0.05, 0.03), V(side * 0.064, -0.075, 0.042)], u => 0.0135 - u * 0.003, 8), skin, [0, 0, 0], 1, open);
     for (let i = 0; i < 4; i++) {
       const x = -0.033 + i * 0.022,
         len = i === 0 ? 0.82 : i === 3 ? 0.88 : 1;
-      add(tube([V(x, -0.09, 0.006), V(x, -0.118 * len, 0.016), V(x, -0.128 * len, 0.045), V(x, -0.11 * len, 0.072), V(x, -0.085, 0.074)], u => 0.0115 - u * 0.0025, 7), skin, [0, 0, 0], 1, fist);
+      add(tube([V(x, -0.09, 0.006), V(x, -0.118 * len, 0.016), V(x, -0.128 * len, 0.045), V(x, -0.11 * len, 0.072), V(x, -0.085, 0.074)], u => 0.0115 - u * 0.0025, 8), skin, [0, 0, 0], 1, fist);
     }
-    add(tube([V(side * 0.042, -0.025, 0.012), V(side * 0.05, -0.055, 0.045), V(side * 0.028, -0.08, 0.072), V(side * 0.01, -0.09, 0.08)], u => 0.0135 - u * 0.003, 7), skin, [0, 0, 0], 1, fist);
+    add(tube([V(side * 0.042, -0.025, 0.012), V(side * 0.05, -0.055, 0.045), V(side * 0.028, -0.08, 0.072), V(side * 0.01, -0.09, 0.08)], u => 0.0135 - u * 0.003, 8), skin, [0, 0, 0], 1, fist);
     for (const m of [upper, fore, shoulder, elbow]) m.userData.dynamic = true;
     arms.push({side, upper, fore, hand, fist, open, shoulder, elbow, elbowPos: V(0, 0, 0)});
   }
@@ -325,17 +349,17 @@ export function createAngler(parent, state) {
   const rod = new T.Group();
   rod.name = 'Bending rod';
   g.add(rod);
-  const blank = std('#5d6b5e', {metalness: 0.25, roughness: 0.35, map: surfaceTexture('metal')}),
-    wrap = std('#8c3f32', {roughness: 0.5}),
-    chrome = std('#d4d7cf', {metalness: 0.9, roughness: 0.18}),
-    cork = std('#b4956f', {map: surfaceTexture('cork'), roughness: 0.95}),
-    reelBody = std('#2f3a38', {metalness: 0.5, roughness: 0.35}),
-    eva = std('#1f2224', {roughness: 0.82}),
-    lineColor = std('#e9e3c2', {roughness: 0.6});
+  const blank = std('#5d6b5e', {metalness: 0.25, roughness: 0.28, clearcoat: 0.85, clearcoatRoughness: 0.14, map: surfaceTexture('metal'), normalMap: metalNorm, normalScale: new T.Vector2(0.15, 0.15)}),
+    wrap = std('#8c3f32', {roughness: 0.38, clearcoat: 0.75}),
+    chrome = std('#d4d7cf', {metalness: 0.94, roughness: 0.12, clearcoat: 0.9}),
+    cork = std('#b4956f', {map: surfaceTexture('cork'), normalMap: corkNorm, normalScale: new T.Vector2(0.35, 0.35), roughness: 0.92}),
+    reelBody = std('#2f3a38', {metalness: 0.58, roughness: 0.26, clearcoat: 0.65}),
+    eva = std('#1f2224', {roughness: 0.82, normalMap: corkNorm, normalScale: new T.Vector2(0.2, 0.2)}),
+    lineColor = std('#e9e3c2', {roughness: 0.5, clearcoat: 0.3});
   const rodSegments = Array.from({length: 14}, (_, i) => {
     const r0 = 0.017 - i * 0.00085,
       r1 = 0.017 - (i + 1) * 0.00085;
-    const m = new T.Mesh(new T.CylinderGeometry(r1, r0, 1, 10), blank);
+    const m = new T.Mesh(new T.CylinderGeometry(r1, r0, 1, 12), blank);
     m.userData.dynamic = true;
     rod.add(m);
     return m;
@@ -344,9 +368,9 @@ export function createAngler(parent, state) {
   const guides = Array.from({length: 7}, (_, i) => {
     const gg = new T.Group(),
       ringR = 0.03 - i * 0.0033;
-    add(new T.TorusGeometry(ringR, 0.004, 6, 16), chrome, [0, 0, ringR + 0.014], 1, gg, [0, Math.PI / 2, 0]);
-    add(new T.CylinderGeometry(0.003, 0.003, ringR + 0.014, 5), chrome, [0, 0, (ringR + 0.014) / 2], 1, gg, [Math.PI / 2, 0, 0]);
-    add(new T.CylinderGeometry(0.0185 - i * 0.0011, 0.0185 - i * 0.0011, 0.03, 10), wrap, [0, 0, 0], 1, gg);
+    add(new T.TorusGeometry(ringR, 0.004, 6, 18), chrome, [0, 0, ringR + 0.014], 1, gg, [0, Math.PI / 2, 0]);
+    add(new T.CylinderGeometry(0.003, 0.003, ringR + 0.014, 6), chrome, [0, 0, (ringR + 0.014) / 2], 1, gg, [Math.PI / 2, 0, 0]);
+    add(new T.CylinderGeometry(0.0185 - i * 0.0011, 0.0185 - i * 0.0011, 0.032, 12), wrap, [0, 0, 0], 1, gg);
     rod.add(gg);
     return gg;
   });
@@ -354,23 +378,25 @@ export function createAngler(parent, state) {
   // local +z below the rod (where the reel hangs), local -x on the reeling-hand side.
   const grip = new T.Group();
   rod.add(grip);
-  add(lathe([[0.02, -0.3], [0.03, -0.29], [0.034, -0.18], [0.03, -0.06], [0.026, -0.03], [0.022, -0.02]], 18), cork, [0, 0, 0], 1, grip);
-  add(new T.CylinderGeometry(0.026, 0.026, 0.1, 16), chrome, [0, 0.03, 0], 1, grip);
-  add(lathe([[0.022, 0.08], [0.03, 0.1], [0.032, 0.2], [0.02, 0.23]], 16), cork, [0, 0, 0], 1, grip);
-  add(new T.CylinderGeometry(0.031, 0.025, 0.04, 16), sole, [0, -0.32, 0], 1, grip);
-  // Spinning reel: stem down from the seat, body and spool on an axis parallel to the rod.
+  add(lathe([[0.02, -0.3], [0.03, -0.29], [0.034, -0.18], [0.03, -0.06], [0.026, -0.03], [0.022, -0.02]], 22), cork, [0, 0, 0], 1, grip);
+  add(new T.CylinderGeometry(0.026, 0.026, 0.1, 18), chrome, [0, 0.03, 0], 1, grip);
+  add(lathe([[0.022, 0.08], [0.03, 0.1], [0.032, 0.2], [0.02, 0.23]], 20), cork, [0, 0, 0], 1, grip);
+  add(new T.CylinderGeometry(0.031, 0.025, 0.04, 18), sole, [0, -0.32, 0], 1, grip);
+  // Spinning reel: stem down from the seat, body, rotor arms, bail wire, line roller, and spool.
   const REEL_DROP = 0.11,
     CRANK_SIDE = -0.062,
     CRANK_R = 0.068;
   add(new T.BoxGeometry(0.016, 0.06, 0.012), chrome, [0, 0.03, 0.03], 1, grip);
-  add(new T.CylinderGeometry(0.009, 0.011, REEL_DROP - 0.03, 8), reelBody, [0, 0.03, 0.03 + (REEL_DROP - 0.03) / 2], 1, grip, [Math.PI / 2, 0, 0]);
-  add(lathe([[0.001, -0.07], [0.035, -0.06], [0.045, -0.02], [0.042, 0.02], [0.03, 0.04]], 20), reelBody, [0, 0.03, REEL_DROP], 1, grip);
-  add(lathe([[0.04, 0.04], [0.04, 0.05], [0.032, 0.055], [0.032, 0.11], [0.042, 0.115], [0.04, 0.125], [0.001, 0.125]], 22), chrome, [0, 0.03, REEL_DROP], 1, grip);
-  add(new T.CylinderGeometry(0.034, 0.034, 0.05, 22), lineColor, [0, 0.113, REEL_DROP], 1, grip);
-  add(new T.TorusGeometry(0.048, 0.0035, 5, 22, Math.PI), chrome, [0, 0.12, REEL_DROP], 1, grip, [Math.PI / 2, 0, 0]);
-  add(new T.CylinderGeometry(0.008, 0.008, Math.abs(CRANK_SIDE), 8), reelBody, [CRANK_SIDE / 2, 0.03, REEL_DROP], 1, grip, [0, 0, Math.PI / 2]);
-  const crankArm = add(new T.CylinderGeometry(0.0055, 0.0055, 1, 6), reelBody),
-    knob = add(new T.CapsuleGeometry(0.013, 0.03, 4, 10), cork);
+  add(new T.CylinderGeometry(0.009, 0.011, REEL_DROP - 0.03, 10), reelBody, [0, 0.03, 0.03 + (REEL_DROP - 0.03) / 2], 1, grip, [Math.PI / 2, 0, 0]);
+  add(lathe([[0.001, -0.07], [0.035, -0.06], [0.045, -0.02], [0.042, 0.02], [0.03, 0.04]], 24), reelBody, [0, 0.03, REEL_DROP], 1, grip);
+  add(lathe([[0.04, 0.04], [0.04, 0.05], [0.032, 0.055], [0.032, 0.11], [0.042, 0.115], [0.04, 0.125], [0.022, 0.138], [0.001, 0.14]], 24), chrome, [0, 0.03, REEL_DROP], 1, grip);
+  add(new T.CylinderGeometry(0.034, 0.034, 0.05, 24), lineColor, [0, 0.113, REEL_DROP], 1, grip);
+  // Bail arm & line roller on the spinning reel rotor.
+  add(new T.TorusGeometry(0.05, 0.0038, 6, 26, Math.PI * 1.15), chrome, [0, 0.12, REEL_DROP], 1, grip, [Math.PI / 2 + 0.15, 0, -0.2]);
+  add(new T.CylinderGeometry(0.009, 0.009, 0.012, 12), brass, [0.048, 0.12, REEL_DROP], 1, grip, [0, 0, Math.PI / 2]);
+  add(new T.CylinderGeometry(0.008, 0.008, Math.abs(CRANK_SIDE), 10), reelBody, [CRANK_SIDE / 2, 0.03, REEL_DROP], 1, grip, [0, 0, Math.PI / 2]);
+  const crankArm = add(new T.CylinderGeometry(0.0055, 0.0055, 1, 8), reelBody),
+    knob = add(new T.CapsuleGeometry(0.013, 0.03, 5, 12), cork);
   crankArm.userData.dynamic = knob.userData.dynamic = true;
 
   let rodTip = V(0, 0, 0),

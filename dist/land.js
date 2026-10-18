@@ -1,5 +1,5 @@
 import * as T from './assets/three.module.js';
-import {fbm, noise3, rand, merge, paint, place, displace} from './models.js?v=8';
+import {fbm, noise3, rand, merge, paint, place, displace, applyRayTracedShading} from './models.js?v=10';
 // One continuous landscape per water: shoreline, banks, rolling hills and a ring of distant
 // mountains in every direction, so there is no edge to see past, no gap to look under and no
 // cut-out scenery. The same height function places trees, rocks, roads and cars, keeps
@@ -195,21 +195,22 @@ function bakeShore(region, tex) {
   tex.needsUpdate = true;
 }
 
-// Low-poly trees for the hills: thousands of them read as forest at a distance, where the
-// detailed bank-side trees would cost too much.
+// Distant hill trees: multi-tier pines and clustered broadleaf crowns.
 function hillTreeGeometries() {
   const pine = merge([
-    paint(place(new T.CylinderGeometry(0.12, 0.2, 1.6, 5), [0, 0.8, 0]), '#4a3a2c'),
-    paint(place(new T.ConeGeometry(1.5, 3.3, 7), [0, 2.6, 0]), '#2b4d3a'),
-    paint(place(new T.ConeGeometry(1.1, 2.7, 7), [0, 4.1, 0]), '#305842'),
+    paint(place(new T.CylinderGeometry(0.12, 0.22, 1.7, 6), [0, 0.85, 0]), '#4a3a2c'),
+    paint(place(new T.ConeGeometry(1.55, 2.5, 9), [0, 2.3, 0]), '#264736'),
+    paint(place(new T.ConeGeometry(1.22, 2.3, 9), [0, 3.6, 0]), '#2b4d3a'),
+    paint(place(new T.ConeGeometry(0.85, 2.0, 9), [0, 4.7, 0]), '#335d45'),
   ]);
   const leaf = merge([
-    paint(place(new T.CylinderGeometry(0.14, 0.24, 2.1, 5), [0, 1.05, 0]), '#4d3d2d'),
-    paint(place(displace(new T.IcosahedronGeometry(1.7, 1), 0.3, 1.2, 3, 2), [0, 3.2, 0], [0, 0, 0], [1, 0.85, 1]), '#3c6342'),
+    paint(place(new T.CylinderGeometry(0.14, 0.25, 2.1, 6), [0, 1.05, 0]), '#4d3d2d'),
+    paint(place(displace(new T.IcosahedronGeometry(1.65, 2), 0.3, 1.2, 3, 2), [0, 3.15, 0], [0, 0, 0], [1.05, 0.88, 1.05]), '#385e3e'),
+    paint(place(displace(new T.IcosahedronGeometry(1.15, 1), 0.22, 1.4, 7, 2), [0.45, 3.85, 0.2], [0, 1.1, 0], [1, 0.85, 1]), '#466f4a'),
   ]);
   return [pine, leaf];
 }
-const TREE_MAX = 3600;
+const TREE_MAX = 4200;
 function placeTrees(region, count) {
   const r = rand(region * 7919 + 17),
     out = [[], []];
@@ -233,22 +234,29 @@ function placeTrees(region, count) {
   return out;
 }
 
-export function createLand(parent, initialRegion = 0, detail = 'balanced') {
-  const material = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.96, metalness: 0});
+export function createLand(parent, initialRegion = 0, detail = 'medium') {
+  const material = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.94, metalness: 0});
   // Distant land never fogs out completely: silhouettes stay, tinted toward the horizon
   // (aerial perspective), which is what sells the distance.
-  material.onBeforeCompile = shader => {
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <fog_fragment>',
-      `#ifdef USE_FOG
-        float fogFactor = (1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth)) * 0.86;
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
-      #endif`,
-    );
+  const applyAerialFog = mat => {
+    const prev = mat.onBeforeCompile;
+    mat.onBeforeCompile = (shader, renderer) => {
+      if (prev) prev(shader, renderer);
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <fog_fragment>',
+        `#ifdef USE_FOG
+          float fogFactor = (1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth)) * 0.86;
+          gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, fogFactor);
+        #endif`,
+      );
+    };
   };
+  applyRayTracedShading(material, 0.08);
+  applyAerialFog(material);
   const mesh = new T.Mesh(new T.BufferGeometry(), material);
-  const treeMaterial = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.9});
-  treeMaterial.onBeforeCompile = material.onBeforeCompile;
+  const treeMaterial = new T.MeshStandardMaterial({vertexColors: true, roughness: 0.88});
+  applyRayTracedShading(treeMaterial, 0.28);
+  applyAerialFog(treeMaterial);
   const trees = hillTreeGeometries().map(g => {
     const m = new T.InstancedMesh(g, treeMaterial, TREE_MAX);
     m.name = 'Hill trees';
@@ -261,7 +269,18 @@ export function createLand(parent, initialRegion = 0, detail = 'balanced') {
   const treeCache = new Map(),
     obj = new T.Object3D(),
     tint = new T.Color();
-  const treesFor = q => ({battery: 700, balanced: 1600, crisp: 2400, ultra: TREE_MAX})[q] || 1600;
+  const treesFor = q =>
+    ({
+      'ultra-low': 350,
+      low: 750,
+      medium: 1600,
+      high: 2400,
+      'very-high': 3200,
+      ultra: TREE_MAX,
+      battery: 700,
+      balanced: 1600,
+      crisp: 2400,
+    })[q] || 1600;
   let treeQuality = detail;
   function plantTrees(r) {
     const key = r + ':' + treeQuality;
@@ -288,7 +307,18 @@ export function createLand(parent, initialRegion = 0, detail = 'balanced') {
   const cache = new Map();
   let region = -1,
     cols = 0;
-  const colsFor = q => ({battery: 150, balanced: 210, crisp: 250, ultra: 320})[q] || 210;
+  const colsFor = q =>
+    ({
+      'ultra-low': 115,
+      low: 150,
+      medium: 210,
+      high: 250,
+      'very-high': 290,
+      ultra: 340,
+      battery: 150,
+      balanced: 210,
+      crisp: 250,
+    })[q] || 210;
   function setRegion(r, quality = treeQuality) {
     const want = colsFor(quality);
     if (r === region && want === cols && quality === treeQuality) return;

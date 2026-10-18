@@ -1,10 +1,10 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=8';
-import {createAngler} from './angler.js?v=8';
-import {freshState} from './economy.js?v=8';
-import {surfaceTexture} from './textures.js?v=8';
-import {loft, tube} from './models.js?v=8';
-import {ITEM_BUILDERS} from './items.js?v=8';
+import {createFish, animateFish, disposeFish} from './fish.js?v=10';
+import {createAngler} from './angler.js?v=10';
+import {freshState} from './economy.js?v=10';
+import {surfaceTexture} from './textures.js?v=10';
+import {loft, tube} from './models.js?v=10';
+import {ITEM_BUILDERS} from './items.js?v=10';
 let renderer = null,
   scene,
   camera,
@@ -31,7 +31,7 @@ function tick(ms) {
 }
 export function stopPreview() {
   active = false;
-  cancelAnimationFrame(frameId);
+  globalThis.cancelAnimationFrame?.(frameId);
   if (model) {
     scene.remove(model);
     disposeFish(model);
@@ -356,7 +356,7 @@ function keeperTick(ms) {
 export function showKeeper(container, wave = false) {
   keeperActive = false;
   try {
-    cancelAnimationFrame(keeperFrame);
+    globalThis.cancelAnimationFrame?.(keeperFrame);
     if (!keeperRenderer) {
       keeperRenderer = new T.WebGLRenderer({antialias: true, powerPreference: 'low-power'});
       keeperRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -385,6 +385,6 @@ export function showKeeper(container, wave = false) {
 export function stopKeeper() {
   keeperActive = false;
   if (!keeperRenderer) return;
-  cancelAnimationFrame(keeperFrame);
+  globalThis.cancelAnimationFrame?.(keeperFrame);
   keeperRenderer.domElement.remove();
 }
