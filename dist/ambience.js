@@ -1,7 +1,7 @@
 import * as T from './assets/three.module.js';
-import {merge, paint, place} from './models.js?v=10';
-import {landHeight} from './land.js?v=10';
-import {cloudTexture} from './textures.js?v=10';
+import {merge, paint, place} from './models.js?v=11';
+import {landHeight} from './land.js?v=11';
+import {cloudTexture} from './textures.js?v=11';
 // Background life in the spirit of Roku City: the world carries on around the angler, slowly
 // and quietly, at the edge of the frame. Nothing here is interactive and nothing flashes.
 //

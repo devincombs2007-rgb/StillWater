@@ -40,7 +40,7 @@ import {
   canBreed,
   breedCost,
   breedResidents,
-} from './economy.js?v=10';
+} from './economy.js?v=11';
 import {
   worldConditions,
   startEncounter,
@@ -52,16 +52,16 @@ import {
   isReelHit,
   isPerfectHit,
   WEATHER_NAMES,
-} from './fishing.js?v=10';
+} from './fishing.js?v=11';
 // The one place the release number lives; shown faintly in a corner like any shipped game.
 // BUILD must match index.html's stillwater-build marker (the offline test checks it).
-export const VERSION = '1.8.0',
-  BUILD = 10;
-import {createWorld} from './scene.js?v=10';
-import {SKINS, HAIRS, EYES, HAIR_STYLES, FACIAL_HAIR} from './angler.js?v=10';
-import {createAudio} from './audio.js?v=10';
-import {showPreview, stopPreview, fishThumbnail, itemThumbnail, showKeeper, stopKeeper} from './preview.js?v=10';
-import {fishSvg} from './art.js?v=10';
+export const VERSION = '1.9.0',
+  BUILD = 11;
+import {createWorld} from './scene.js?v=11';
+import {SKINS, HAIRS, EYES, HAIR_STYLES, FACIAL_HAIR} from './angler.js?v=11';
+import {createAudio} from './audio.js?v=11';
+import {showPreview, stopPreview, fishThumbnail, itemThumbnail, showKeeper, stopKeeper} from './preview.js?v=11';
+import {fishSvg} from './art.js?v=11';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
   esc = v =>
@@ -998,6 +998,15 @@ function characterView() {
       : `<div class="eyebrow section-space">SKIN TONE</div>${swatch('skin', SKINS, 'Skin tone')}<div class="eyebrow section-space">EYES</div>${swatch('eyes', EYES, 'Eye colour')}<div class="eyebrow section-space">FACIAL HAIR</div>${chips('facial', FACIAL_HAIR)}`;
   return `<span class="eyebrow">YOUR ANGLER · A PERMANENT FIRST CHOICE</span><h2 id="panel-title">Meet the person by the water.</h2><p>Drag to turn them around. Shirts, hats, sunglasses, trousers, and shoes can be changed later at the market.</p><label class="name-label" for="character-name">NAME</label><input class="character-name" id="character-name" maxlength="24" value="${esc(creation.name)}"><div class="look-tabs" role="tablist">${tabs.map(([id, n]) => `<button role="tab" class="look-tab${creationTab === id ? ' chosen' : ''}" data-look-tab="${id}" aria-selected="${creationTab === id}">${n}</button>`).join('')}<button class="look-tab" id="random-look" aria-label="Random look">⟳ Surprise me</button></div>${body}<button class="primary-button" id="create-character">Begin my angler’s story ↗</button>`;
 }
+// One line under the upscaler buttons: what it is doing right now on this screen.
+function upscaleNote() {
+  const info = world?.upscaleInfo?.();
+  if (info && info.supported === false) return 'Not available on this device (needs WebGL 2 float render targets). The game draws at full resolution instead.';
+  if (state.upscaler === 'off') return 'Off: every pixel is drawn directly, with no temporal anti-aliasing.';
+  const size = a => `${a[0]}×${a[1]}`;
+  const live = info?.active ? ` Drawing ${size(info.input)}, reconstructed to ${size(info.output)}.` : '';
+  return `${state.upscaler === 'native' ? 'Full-resolution temporal anti-aliasing.' : 'Draws fewer pixels and rebuilds full detail from several frames.'}${live}`;
+}
 function helpView() {
   return `<span class="eyebrow">SANCTUARY CHRONICLES UPDATE · V${VERSION}</span><h2 id="panel-title">Read the water. Earn the catch.</h2><div class="help-steps"><p><b>Cast &amp; hook.</b> Hold and release to cast. Watch the float: small twitches are curious fish, a hard plunge is a bite. Not every cast gets a bite. Set the hook within the short bite window. Once a line is out, you can tap anywhere on the scene to hook and reel.</p><p><b>Fight, sweet-spot &amp; rhythm.</b> Tap inside the glowing zone to reel; hitting the golden center triggers a <b>Perfect Pull</b> (+28% distance, lower tension). Stringing together <b>3 hits in a row</b> fills the rhythm pips and triggers a <b>Steady Rhythm</b> burst that calms the fish and eases line tension. Watch the fish’s posture—reeling while it glides/rests is gentler than pulling while it darts.</p><p><b>Raise &amp; invest.</b> Keeping a catch drops it into the aquarium. Baby fish grow, care upgrades improve income and value, and feeding costs 8 pearls for a growth boost. Check Milo’s Bait Shop for his rotating <b>Daily Tide Request</b> (1.5× release value + bonus pearls).</p><p><b>Story Chronicles &amp; Milestones.</b> Follow the 8-chapter <b>Sanctuary Chronicles</b> on the lake HUD (or in Field Notes) for narrative progression and permanent keepsake bonuses, or toggle to classic Catch Milestones.</p><p><b>Shortcuts.</b> Space or Enter casts and reels. 1–4 switch between the lake, aquarium, bait shop and field notes. C swaps the camera.</p><p><b>World conditions.</b> A 20-minute world day and changing simulated weather affect odds. Catfish and some deep-water fish favor night; trout favor dawn.</p></div><div class="eyebrow section-space">VIDEO SETTINGS · GRAPHICAL FIDELITY</div><div class="quality-options video-tiers">${[
     ['ultra-low', 'Ultra Low'],
@@ -1019,6 +1028,27 @@ function helpView() {
     .map(
       ([id, name]) =>
         `<button class="secondary-button" data-rt="${id}" ${(state.rayTracing || 'auto') === id ? 'disabled' : ''}>${name}</button>`,
+    )
+    .join('')}</div><div class="eyebrow section-space">UPSCALER · CLEARWATER TEMPORAL SUPER RESOLUTION</div><p class="upscale-note">${upscaleNote()}</p><div class="quality-options video-tiers">${[
+    ['off', 'Off'],
+    ['native', 'Native AA'],
+    ['quality', 'Quality'],
+    ['balanced', 'Balanced'],
+    ['performance', 'Performance'],
+    ['ultra-performance', 'Ultra Perf.'],
+  ]
+    .map(
+      ([id, name]) =>
+        `<button class="secondary-button" data-upscale="${id}" ${state.upscaler === id ? 'disabled' : ''}>${name}</button>`,
+    )
+    .join('')}</div><div class="quality-options">${[
+    ['soft', 'Soft'],
+    ['standard', 'Standard'],
+    ['crisp', 'Crisp'],
+  ]
+    .map(
+      ([id, name]) =>
+        `<button class="secondary-button" data-sharpness="${id}" ${state.sharpness === id ? 'disabled' : ''}>${name} sharpening</button>`,
     )
     .join('')}</div><div class="eyebrow section-space">AUDIO &amp; SOUNDSCAPE</div><div class="audio-options"><div class="quality-options"><button class="secondary-button" id="options-sound">${state.audioOn ? 'Water &amp; FX on · tap to mute' : 'Sound muted · tap to enable'}</button><button class="secondary-button" id="options-music">${state.musicOn !== false ? 'Ambient harp on · tap to mute' : 'Ambient harp off · tap to enable'}</button></div><div class="quality-options">${[
     [0.15, 'Quiet'],
@@ -1457,6 +1487,27 @@ function bindPanel() {
         (b.onclick = () => {
           state.quality = b.dataset.quality;
           world?.setQuality?.();
+          save();
+          openPanel('help');
+        }),
+    );
+    all('[data-upscale]').forEach(
+      b =>
+        (b.onclick = () => {
+          state.upscaler = b.dataset.upscale;
+          save();
+          openPanel('help');
+          // The panel opens before the next frame resizes the targets; refresh the line after it.
+          setTimeout(() => {
+            const note = $('.upscale-note');
+            if (note) note.textContent = upscaleNote();
+          }, 150);
+        }),
+    );
+    all('[data-sharpness]').forEach(
+      b =>
+        (b.onclick = () => {
+          state.sharpness = b.dataset.sharpness;
           save();
           openPanel('help');
         }),

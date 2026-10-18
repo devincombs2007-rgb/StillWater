@@ -1,6 +1,6 @@
 import * as T from './assets/three.module.js';
-import {merge, paint, applyRayTracedShading} from './models.js?v=10';
-import {normalTexture} from './textures.js?v=10';
+import {merge, paint, applyRayTracedShading} from './models.js?v=11';
+import {normalTexture} from './textures.js?v=11';
 const PI = Math.PI,
   TAU = PI * 2;
 const white = new T.Color('#f2dfb5'),

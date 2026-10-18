@@ -1,10 +1,10 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=10';
-import {createAngler} from './angler.js?v=10';
-import {freshState} from './economy.js?v=10';
-import {surfaceTexture} from './textures.js?v=10';
-import {loft, tube} from './models.js?v=10';
-import {ITEM_BUILDERS} from './items.js?v=10';
+import {createFish, animateFish, disposeFish} from './fish.js?v=11';
+import {createAngler} from './angler.js?v=11';
+import {freshState} from './economy.js?v=11';
+import {surfaceTexture} from './textures.js?v=11';
+import {loft, tube} from './models.js?v=11';
+import {ITEM_BUILDERS} from './items.js?v=11';
 let renderer = null,
   scene,
   camera,

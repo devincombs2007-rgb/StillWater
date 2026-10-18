@@ -1,4 +1,4 @@
-import {BAITS, LINES, effectiveRod, fishWeight, rollFish} from './economy.js?v=10';
+import {BAITS, LINES, effectiveRod, fishWeight, rollFish} from './economy.js?v=11';
 const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 // Weather by water: each region has its own climate. A spell of weather lasts about seven
 // minutes and the scene eases from one spell into the next.

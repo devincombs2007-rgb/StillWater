@@ -1,5 +1,5 @@
 import * as T from './assets/three.module.js';
-import {fbm, noise3, rand, merge, paint, place, displace, applyRayTracedShading} from './models.js?v=10';
+import {fbm, noise3, rand, merge, paint, place, displace, applyRayTracedShading} from './models.js?v=11';
 // One continuous landscape per water: shoreline, banks, rolling hills and a ring of distant
 // mountains in every direction, so there is no edge to see past, no gap to look under and no
 // cut-out scenery. The same height function places trees, rocks, roads and cars, keeps

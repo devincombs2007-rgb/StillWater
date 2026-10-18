@@ -1,10 +1,10 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture, normalTexture} from './textures.js?v=10';
-import {applyRayTracedShading} from './models.js?v=10';
-import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=10';
-import {BOATS} from './economy.js?v=10';
-import {createLand, landHeight as regionLand, landDistance} from './land.js?v=10';
-import {createAmbience} from './ambience.js?v=10';
+import {surfaceTexture, normalTexture} from './textures.js?v=11';
+import {applyRayTracedShading} from './models.js?v=11';
+import {buoyancyPose, orientedPose, createHullMotion, hullTarget, steerBoat} from './surface.js?v=11';
+import {BOATS} from './economy.js?v=11';
+import {createLand, landHeight as regionLand, landDistance} from './land.js?v=11';
+import {createAmbience} from './ambience.js?v=11';
 import {
   broadleafGeometry,
   pineGeometry,
@@ -18,7 +18,7 @@ import {
   flapGull,
   coralGeometry,
   lilyPadGeometry,
-} from './scenery.js?v=10';
+} from './scenery.js?v=11';
 const TAU = Math.PI * 2;
 const IMPULSES = 16;
 // Coherent surface model. The GLSL and JS height functions are kept identical so the

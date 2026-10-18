@@ -1,8 +1,8 @@
 import * as T from './assets/three.module.js';
-import {surfaceTexture, normalTexture} from './textures.js?v=10';
-import {APPAREL} from './economy.js?v=10';
-import {lathe, displace, tube, consolidate, loft, applyRayTracedShading} from './models.js?v=10';
-import {rodLook, lineLook} from './looks.js?v=10';
+import {surfaceTexture, normalTexture} from './textures.js?v=11';
+import {APPAREL} from './economy.js?v=11';
+import {lathe, displace, tube, consolidate, loft, applyRayTracedShading} from './models.js?v=11';
+import {rodLook, lineLook} from './looks.js?v=11';
 export const SKINS = ['#edc7a6', '#d3a37e', '#b17f5c', '#875e45', '#624735'],
   HAIRS = ['#302b29', '#65503b', '#a58455', '#352b32'],
   EYES = ['#5a3d2b', '#7a6a3a', '#4f7a4e', '#4c6f8e', '#6d7a80'],

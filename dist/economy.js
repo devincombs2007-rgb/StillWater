@@ -1045,6 +1045,8 @@ export function freshState(now = Date.now()) {
     collectionClaimed: 0,
     quality: 'high',
     rayTracing: 'auto',
+    upscaler: 'quality',
+    sharpness: 'standard',
     musicOn: true,
     bredCount: 0,
     bait: 0,
@@ -1075,6 +1077,8 @@ export function fishWeight(f, now = Date.now()) {
   return Math.max(0.01, Math.pow(cm, 3) * 0.000012 * (sp?.shape === 'disc' ? 1.5 : sp?.shape === 'eel' ? 0.6 : 1));
 }
 export const QUALITY_TIERS = ['ultra-low', 'low', 'medium', 'high', 'very-high', 'ultra'];
+// Temporal upscaler modes (scene's upscaler.js holds the render scale for each).
+export const UPSCALER_MODES = ['off', 'native', 'quality', 'balanced', 'performance', 'ultra-performance'];
 export const MORPH_NAMES = {pearl: 'Pearl Iridescent', starlight: 'Starlight Shimmer', golden: 'Sunlit Gold'};
 export function releaseValue(f, now = Date.now()) {
   const sp = SPECIES.find(x => x.id === f.id),
@@ -1162,6 +1166,8 @@ export function sanitize(raw, now = Date.now()) {
   if (qMap[s.quality]) s.quality = qMap[s.quality];
   s.quality = QUALITY_TIERS.includes(s.quality) ? s.quality : 'high';
   s.rayTracing = ['auto', 'on', 'off'].includes(s.rayTracing) ? s.rayTracing : 'auto';
+  s.upscaler = UPSCALER_MODES.includes(s.upscaler) ? s.upscaler : 'quality';
+  s.sharpness = ['soft', 'standard', 'crisp'].includes(s.sharpness) ? s.sharpness : 'standard';
   s.musicOn = s.musicOn !== false;
   s.bredCount = n(s.bredCount, 0);
   s.cameraMode = s.cameraMode === 'first' ? 'first' : 'third';
@@ -1435,6 +1441,8 @@ export function rebirth(s) {
     tidesCompleted: s.tidesCompleted || 0,
     quality: s.quality,
     rayTracing: s.rayTracing,
+    upscaler: s.upscaler,
+    sharpness: s.sharpness,
     musicOn: s.musicOn,
     bredCount: s.bredCount || 0,
     cameraMode: s.cameraMode,

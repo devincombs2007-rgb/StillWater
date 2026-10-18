@@ -1,15 +1,16 @@
 import * as T from './assets/three.module.js';
-import {createFish, animateFish, disposeFish} from './fish.js?v=10';
-import {makeSwimmer, stepSwimmer} from './swimming.js?v=10';
-import {createWater, createEnvironment, addSway} from './environment.js?v=10';
-import {createAngler} from './angler.js?v=10';
-import {createTackle} from './tackle.js?v=10';
-import {surfaceTexture, cloudTexture, setAnisotropy, normalTexture} from './textures.js?v=10';
-import {rockGeometry, dockGeometry, lantern, reedGeometry, coralGeometry} from './scenery.js?v=10';
-import {place, merge, fbm, paint, tube, displace, lathe, rtUniforms, applyRayTracedShading} from './models.js?v=10';
-import {createTankSurface} from './surface.js?v=10';
-import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=10';
-import {worldConditions} from './fishing.js?v=10';
+import {createFish, animateFish, disposeFish} from './fish.js?v=11';
+import {makeSwimmer, stepSwimmer} from './swimming.js?v=11';
+import {createWater, createEnvironment, addSway} from './environment.js?v=11';
+import {createAngler} from './angler.js?v=11';
+import {createTackle} from './tackle.js?v=11';
+import {surfaceTexture, cloudTexture, setAnisotropy, normalTexture} from './textures.js?v=11';
+import {rockGeometry, dockGeometry, lantern, reedGeometry, coralGeometry} from './scenery.js?v=11';
+import {place, merge, fbm, paint, tube, displace, lathe, rtUniforms, applyRayTracedShading} from './models.js?v=11';
+import {createTankSurface} from './surface.js?v=11';
+import {SPECIES, BAITS, growth, RARITY_COLORS} from './economy.js?v=11';
+import {worldConditions} from './fishing.js?v=11';
+import {createUpscaler} from './upscaler.js?v=11';
 const TAU = Math.PI * 2;
 // Sky keys across the 20-minute world day: [cycle, zenith, horizon, sun colour].
 const SKY = [
@@ -99,6 +100,10 @@ export function createWorld(canvas, state, onError) {
   const camera = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 900);
   const reflCam = new T.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 900);
   let reflTarget = null;
+  const upscaler = createUpscaler(renderer);
+  let upscaleView = null,
+    upscaleRegion = null;
+  if (typeof location !== 'undefined' && /[?&]compare\b/.test(location.search)) upscaler.setSplit(0.5);
   const reflMatrix = new T.Matrix4(),
     reflClipPlane = new T.Plane(new T.Vector3(0, 1, 0), -0.02);
   const lake = new T.Group(),
@@ -1657,15 +1662,29 @@ export function createWorld(canvas, state, onError) {
       renderer.setRenderTarget(prevTarget);
       waterSystem.mesh.visible = true;
     }
+    // The main pass goes through the temporal upscaler (upscaler.js) unless it is off or the
+    // device lacks float render targets, in which case it draws straight to the screen.
+    if (view !== upscaleView || region !== upscaleRegion) upscaler.reset();
+    upscaleView = view;
+    upscaleRegion = region;
+    upscaler.render(drawMain, camera, state.upscaler, state.sharpness);
+  }
+  const drawMain = () => {
     renderer.clear();
     renderer.render(skyScene, camera);
     renderer.clearDepth?.();
     renderer.render(scene, camera);
-  }
+  };
   // Development only (?dev in the URL): place the camera anywhere to inspect the world.
   const devCam = typeof location !== 'undefined' && /[?&]dev\b/.test(location.search) ? {} : null;
   if (devCam)
     window.__dev = {
+      upscale: (mode, sharp) => {
+        state.upscaler = mode;
+        if (sharp) state.sharpness = sharp;
+      },
+      split: x => upscaler.setSplit(x),
+      upscaleInfo: () => upscaler.info(),
       cam: (p, t) => {
         devCam.p = p && new T.Vector3(...p);
         devCam.t = t && new T.Vector3(...t);
@@ -1736,6 +1755,7 @@ export function createWorld(canvas, state, onError) {
       applyPalette();
     },
     setQuality: applyQuality,
+    upscaleInfo: () => ({...upscaler.info(), supported: upscaler.supported}),
     setConditions: c => {
       if (!titleMode) conditions = c;
     },

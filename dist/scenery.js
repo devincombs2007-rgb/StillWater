@@ -1,6 +1,6 @@
 import * as T from './assets/three.module.js';
-import {lathe, displace, paint, place, merge, tube, fbm, rand, vcMaterial, applyRayTracedShading} from './models.js?v=10';
-import {normalTexture} from './textures.js?v=10';
+import {lathe, displace, paint, place, merge, tube, fbm, rand, vcMaterial, applyRayTracedShading} from './models.js?v=11';
+import {normalTexture} from './textures.js?v=11';
 // Procedural scenery models. Each factory takes a seed and returns an Object3D built
 // mostly from merged, vertex-coloured geometry so a whole prop is one or two draw calls.
 const V = (x, y, z) => new T.Vector3(x, y, z);
