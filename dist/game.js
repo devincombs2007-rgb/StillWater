@@ -48,7 +48,7 @@ import {createWorld} from './scene.js?v=8';
 import {SKINS, HAIRS, EYES, HAIR_STYLES, FACIAL_HAIR} from './angler.js?v=8';
 import {createAudio} from './audio.js?v=8';
 import {showPreview, stopPreview} from './preview.js?v=8';
-import {fishThumbnail, showKeeper, stopKeeper} from './preview.js?v=8';
+import {fishThumbnail, itemThumbnail, showKeeper, stopKeeper} from './preview.js?v=8';
 import {fishSvg} from './art.js?v=8';
 const $ = s => document.querySelector(s),
   all = s => [...document.querySelectorAll(s)],
@@ -540,8 +540,8 @@ $('#leave-focus').onclick = () => focus(false);
 $('#help').onclick = () => {
   if (stage === 'idle') openPanel('help');
 };
-function row(icon, name, description, label, enabled, action) {
-  return `<div class="shop-item"><span class="shop-icon">${icon}</span><div class="shop-copy"><h3>${name}</h3><p>${description}</p></div><button class="buy-button" data-buy="${action}" ${enabled ? '' : 'disabled'}>${typeof label === 'number' ? fmt(label) + ' ◇' : label}</button></div>`;
+function row(icon, name, description, label, enabled, action, thumb = '') {
+  return `<div class="shop-item"><span class="shop-icon${thumb ? ' item-art' : ''}"${thumb ? ` data-item="${thumb}"` : ''}>${icon}</span><div class="shop-copy"><h3>${name}</h3><p>${description}</p></div><button class="buy-button" data-buy="${action}" ${enabled ? '' : 'disabled'}>${typeof label === 'number' ? fmt(label) + ' ◇' : label}</button></div>`;
 }
 function shop() {
   const tabs = [
@@ -579,6 +579,7 @@ function shop() {
             state[kind] >= i ? 'Owned' : i === state[kind] + 1 ? r.cost : 'Locked',
             i === state[kind] + 1 && state.pearls >= r.cost,
             kind + ':' + i,
+            kind + ':' + i,
           ),
         )
         .join('');
@@ -593,6 +594,7 @@ function shop() {
         owned ? (state.bait === i ? 'Equipped' : 'Equip') : b.cost,
         owned ? state.bait !== i : state.pearls >= b.cost,
         (owned ? 'bait-equip' : 'bait') + ':' + i,
+        'bait:' + i,
       );
     }).join('');
     list +=
@@ -612,6 +614,7 @@ function shop() {
             : 'Locked',
         state.regions.includes(i) ? state.region !== i : state.regions.includes(i - 1) && state.pearls >= r.cost,
         (state.regions.includes(i) ? 'visit' : 'region') + ':' + i,
+        'waters:' + i,
       ),
     ).join('');
   } else if (shopTab === 'outfit') {
@@ -623,6 +626,7 @@ function shop() {
         state.ownedClothes.includes(a.id) ? (state.outfit[a.slot] === a.id ? 'Equipped' : 'Equip') : a.cost,
         state.ownedClothes.includes(a.id) ? state.outfit[a.slot] !== a.id : state.pearls >= a.cost,
         (state.ownedClothes.includes(a.id) ? 'equip' : 'apparel') + ':' + i,
+        'apparel:' + i,
       ),
     ).join('');
   } else if (shopTab === 'tank') {
@@ -634,6 +638,7 @@ function shop() {
         state.tank >= i ? 'Owned' : i === state.tank + 1 ? t.cost : 'Locked',
         i === state.tank + 1 && state.pearls >= t.cost,
         'tank:' + i,
+        'tank:' + i,
       ),
     ).join('');
     list += DECOR.map((d, i) =>
@@ -644,6 +649,7 @@ function shop() {
         state.decor.includes(d.id) ? 'Placed' : d.cost,
         !state.decor.includes(d.id) && state.pearls >= d.cost,
         'decor:' + i,
+        'decor:' + i,
       ),
     ).join('');
     list += row(
@@ -652,6 +658,7 @@ function shop() {
       `Level ${state.filter}/3 · +15% income each level`,
       state.filter === 3 ? 'Complete' : [480, 2400, 11000][state.filter],
       state.filter < 3 && state.pearls >= [480, 2400, 11000][state.filter],
+      'filter:0',
       'filter:0',
     );
   } else if (shopTab === 'boats') {
@@ -662,6 +669,7 @@ function shop() {
         'Cosmetic anchored vessel · no catch, distance, or rarity advantage',
         state.boat >= i ? 'Owned' : state.regions.includes(3) && i === state.boat + 1 ? b.cost : 'Locked',
         state.regions.includes(3) && i === state.boat + 1 && state.pearls >= b.cost,
+        'boat:' + i,
         'boat:' + i,
       ),
     ).join('');
@@ -768,6 +776,7 @@ function helpView() {
     ['battery', 'Battery · 30 fps'],
     ['balanced', 'Balanced · 45 fps'],
     ['crisp', 'Crisp · 60 fps'],
+    ['ultra', 'Ultra · full detail'],
   ]
     .map(
       ([id, name]) =>
@@ -857,9 +866,25 @@ function hydrateThumbs() {
       .catch(() => {});
   }
 }
+// Shop rows swap their glyph for a rendered 3D model of the item once it is ready.
+function hydrateItems() {
+  for (const el of all('[data-item]')) {
+    const [kind, n] = el.dataset.item.split(':'),
+      i = Number(n),
+      a = kind === 'apparel' ? APPAREL[i] : null;
+    // "No hat" and "No sunglasses" keep their glyph: there is nothing to show.
+    if (a && /0$/.test(a.id) && (a.slot === 'hat' || a.slot === 'glasses')) continue;
+    itemThumbnail(kind === 'apparel' ? 'apparel' : kind, i, a ? {id: a.id, slot: a.slot, character: state.character} : null)
+      .then(url => {
+        if (url && el.isConnected !== false) el.innerHTML = `<img alt="" src="${url}">`;
+      })
+      .catch(() => {});
+  }
+}
 function bindPanel() {
   if (panelType === 'journal' || panelType === 'residents') hydrateThumbs();
   // Milo is rendered live in 3D; he waves when you walk in.
+  if (panelType === 'shop') hydrateItems();
   if (panelType === 'shop' && $('#keeper-stage')) {
     showKeeper($('#keeper-stage'), keeperWave);
     keeperWave = false;

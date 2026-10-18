@@ -4,6 +4,7 @@ import {createAngler} from './angler.js?v=8';
 import {freshState} from './economy.js?v=8';
 import {surfaceTexture} from './textures.js?v=8';
 import {loft, tube} from './models.js?v=8';
+import {ITEM_BUILDERS} from './items.js?v=8';
 let renderer = null,
   scene,
   camera,
@@ -131,6 +132,9 @@ function setupThumbs() {
 }
 function renderThumb(species, unknown) {
   if (!thumbRenderer) setupThumbs();
+  thumbRenderer.setSize(320, 180);
+  thumbCamera.aspect = 16 / 9;
+  thumbCamera.updateProjectionMatrix();
   const fish = createFish(species);
   fish.rotation.set(0.08, -0.35, 0.04);
   animateFish(fish, 0.8, 0.6);
@@ -157,11 +161,84 @@ function pump() {
     return;
   }
   try {
-    job.resolve(renderThumb(job.species, job.unknown));
+    job.resolve(job.item ? renderItem(job.item) : renderThumb(job.species, job.unknown));
   } catch {
     job.resolve(null);
   }
   setTimeout(pump, 0);
+}
+// Fit a model in a 4:3 frame from a given turn and tilt, optionally around a focus box.
+function frameAndRender(object, yaw, pitch, focus = null) {
+  thumbRenderer.setSize(200, 150);
+  thumbCamera.aspect = 4 / 3;
+  thumbCamera.updateProjectionMatrix();
+  object.updateMatrixWorld(true);
+  const box = focus || new T.Box3().setFromObject(object),
+    size = box.getSize(new T.Vector3()),
+    center = box.getCenter(new T.Vector3()),
+    radius = size.length() / 2,
+    distance = radius / Math.sin((30 * Math.PI) / 360) * 0.92;
+  const dir = new T.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch));
+  thumbCamera.position.copy(center).addScaledVector(dir, distance);
+  thumbCamera.lookAt(center);
+  thumbCamera.updateMatrixWorld();
+  // Tighten the fit to the model's projected extent (long rods would otherwise sit tiny).
+  let extent = 0;
+  const c = new T.Vector3();
+  for (let k = 0; k < 8; k++) {
+    c.set(k & 1 ? box.max.x : box.min.x, k & 2 ? box.max.y : box.min.y, k & 4 ? box.max.z : box.min.z).project(thumbCamera);
+    extent = Math.max(extent, Math.abs(c.x), Math.abs(c.y));
+  }
+  thumbCamera.position.copy(center).addScaledVector(dir, distance * Math.max(0.35, extent / 0.86));
+  thumbCamera.lookAt(center);
+  thumbScene.overrideMaterial = null;
+  thumbRenderer.render(thumbScene, thumbCamera);
+  return thumbRenderer.domElement.toDataURL('image/png');
+}
+// Free one-off geometry; shared primitives and materials stay, since the world uses them too.
+const disposeTree = o =>
+  o.traverse(m => {
+    if (m.isMesh && !m.geometry.userData.shared) m.geometry.dispose();
+  });
+const APPAREL_FOCUS = {hat: [1.95, 2.55], glasses: [2.05, 2.45], shirt: [1.15, 2.1], pants: [0.1, 1.35], shoes: [0, 0.32]};
+function renderItem({kind, index, outfit}) {
+  if (!thumbRenderer) setupThumbs();
+  if (kind === 'apparel') {
+    // Apparel is shown worn: the player's own angler, framed on that part of the body.
+    const st = freshState();
+    st.character = outfit.character || {name: 'Angler', skin: 1, hair: 1, style: 0};
+    st.outfit = {...st.outfit, [outfit.slot]: outfit.id};
+    const rig = createAngler(thumbScene, st);
+    rig.update(1 / 60, 1, 'create');
+    rig.group.rotation.y = -0.35;
+    rig.group.updateMatrixWorld(true);
+    const [y0, y1] = APPAREL_FOCUS[outfit.slot],
+      half = (y1 - y0) * 0.55,
+      focus = new T.Box3(new T.Vector3(-half, y0, -half * 0.6), new T.Vector3(half, y1, half * 0.6));
+    const url = frameAndRender(rig.group, 0.25, 0.08, focus);
+    thumbScene.remove(rig.group);
+    rig.dispose?.();
+    return url;
+  }
+  const {object, yaw, pitch} = ITEM_BUILDERS[kind](index);
+  thumbScene.add(object);
+  const url = frameAndRender(object, yaw, pitch);
+  thumbScene.remove(object);
+  disposeTree(object);
+  return url;
+}
+// Market item thumbnails, cached per item and queued with the fish renders.
+export function itemThumbnail(kind, index, outfit = null) {
+  const key = 'item:' + kind + ':' + index + (outfit ? ':' + outfit.id + ':' + JSON.stringify(outfit.character || {}) : '');
+  if (!thumbs.has(key))
+    thumbs.set(
+      key,
+      new Promise(resolve => {
+        queue.push({item: {kind, index, outfit}, resolve});
+        if (!pumping) setTimeout(pump, 0);
+      }),
+    );
+  return thumbs.get(key);
 }
 export function fishThumbnail(species, unknown = false) {
   const key = species.id + (unknown ? ':?' : '');

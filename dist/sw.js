@@ -17,6 +17,7 @@ const ASSETS = [
   './fish.js?v=8',
   './swimming.js?v=8',
   './preview.js?v=8',
+  './items.js?v=8',
   './assets/three.module.js',
   './assets/three.core.js',
   './assets/icon-180.png',

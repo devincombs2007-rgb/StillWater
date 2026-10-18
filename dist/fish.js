@@ -246,7 +246,10 @@ export function createFish(f) {
   // Paired fins: pectorals behind the gill cover, pelvics under the belly. Built around
   // their root so they can flap.
   const pectorals = [],
-    details = [];
+    details = [],
+    lodParts = [];
+  // Small parts the tank skips for distant fish (level of detail).
+  g.userData.lodParts = lodParts;
   const pecU = 0.73,
     pelU = 0.56;
   for (const side of [-1, 1]) {
@@ -264,6 +267,7 @@ export function createFish(f) {
     );
     pectorals.push(root);
     const pelvic = new T.Group();
+    lodParts.push(pelvic);
     pelvic.position.set(xAt(pelU), botAt(pelU) * 0.92, side * widthAt(pelU) * 0.45);
     g.add(pelvic);
     addFin(

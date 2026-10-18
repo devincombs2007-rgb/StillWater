@@ -568,6 +568,27 @@ nav svg {
 .shop-copy {
   flex: 1;
 }
+.shop-icon.item-art {
+  flex: 0 0 64px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: radial-gradient(circle at 50% 40%, #e4b98514, transparent 70%);
+}
+.shop-icon.item-art img {
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  animation: item-in 0.5s ease both;
+}
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
 .shop-item h3 {
   margin: 0 0 6px;
   font:

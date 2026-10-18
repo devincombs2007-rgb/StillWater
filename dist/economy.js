@@ -989,7 +989,7 @@ export function sanitize(raw, now = Date.now()) {
     ]),
   ];
   s.region = s.regions.includes(s.region) ? s.region : 0;
-  s.quality = ['battery', 'balanced', 'crisp'].includes(s.quality) ? s.quality : 'balanced';
+  s.quality = ['battery', 'balanced', 'crisp', 'ultra'].includes(s.quality) ? s.quality : 'balanced';
   s.cameraMode = s.cameraMode === 'first' ? 'first' : 'third';
   const rec = s.records && typeof s.records === 'object' ? s.records : {};
   s.records = {};

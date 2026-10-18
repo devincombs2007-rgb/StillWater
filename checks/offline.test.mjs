@@ -18,3 +18,8 @@ const manifest=JSON.parse(await readFile(new URL('../dist/manifest.webmanifest',
 console.log('PASS: offline shell and modules, cache version cleanup, no auth-route interception, rejected login-page caching, and standalone app manifest/icons.');
 const html=await readFile(new URL('../dist/index.html',import.meta.url),'utf8'),css=await readFile(new URL('../dist/style.css',import.meta.url),'utf8');assert.match(html,/apple-mobile-web-app-capable/);assert.match(html,/viewport-fit=cover/);assert.match(css,/-webkit-touch-callout: ?none/);assert.match(css,/-webkit-user-select: ?none/);assert.match(css,/user-select: ?text ?!important/);
 console.log('PASS: iPhone home-screen metadata, safe-area viewport, no-selection CSS, and editable-input exception.');
+{const {readdir}=await import('node:fs/promises');const dir=new URL('../dist/',import.meta.url),build=(await readFile(new URL('index.html',dir),'utf8')).match(/stillwater-build" content="(\d+)"/)[1];
+for(const f of (await readdir(dir)).filter(f=>f.endsWith('.js')&&f!=='sw.js')){const code=await readFile(new URL(f,dir),'utf8');
+ for(const [,m] of code.matchAll(/from '\.\/([\w-]+\.js)\?v=(\d+)'/g)){assert.ok(src.includes(`'./${m}?v=${build}'`),`${f} imports ${m}, which the offline cache must list at v${build}`);}
+ for(const [,v] of code.matchAll(/from '\.\/[\w-]+\.js\?v=(\d+)'/g))assert.equal(v,build,`${f} imports a module at a stale version`);}
+console.log('PASS: every module the game imports is in the offline cache at the current build version.');}

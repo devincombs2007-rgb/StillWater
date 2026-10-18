@@ -1,6 +1,6 @@
 # Stillwater — Claude continuation handoff
 
-Prepared for Devin Combs, 17 October 2026. Current development cut: **v1.5.0, “The Living Water”** (Claude, on top of the published v1.4.0 “The Bait Shop”; `SOURCE_COMMIT.txt` still names the v1.4 published commit). v1.5 is in this repository but **has not been published to the live Site**. No work should be inferred from an earlier chat summary when the files disagree.
+Prepared for Devin Combs, 17 October 2026. Current development cut: **v1.6.0, “Hands on the Water”** (Claude, on top of v1.5 “The Living Water” and the published v1.4.0 “The Bait Shop”; `SOURCE_COMMIT.txt` still names the v1.4 published commit). v1.5 and v1.6 are in this repository but **have not been published to the live Site**. No work should be inferred from an earlier chat summary when the files disagree.
 
 ## Start here
 
@@ -15,6 +15,19 @@ There is no build step and no install is needed to serve the game. Tests require
 Live game: https://stillwater-sanctuary-dev.devincombs.chatgpt.site
 
 The live Site is owner-private. Its identity is in `.openai/hosting.json`. This archive does not provide hosting credentials or the player’s save. Claude can edit/run the supplied static source locally; publishing to the existing Site requires an authorized Sites-capable environment. A separate host is possible if Devin chooses one. Do not imply that opening the live URL grants repository or deployment access.
+
+## v1.6 “Hands on the Water” — what changed
+
+- **People look like people.** The angler (and Milo, who uses the same rig) was rebuilt with adult proportions: lofted superellipse legs, pelvis, torso, collar and neck (`models.loft`), a sculpted skull with jaw, chin, cheekbones and brow, eyeballs with iris/pupil caps, upper lids with lashes that blink, lower lids, a lofted nose, lips, and ears with a rim. Six hairstyles (soft waves, classic, close cut, long, ponytail, bun), four facial-hair options (clean, stubble, moustache, beard) and five eye colours. A winding bug in `loft` had turned every lofted surface inside-out (you saw the inner back wall: floating neck rings, jagged hems); fixed.
+- **Arms are real IK.** Fixed-length two-bone arms (`solveArm`/`poseArm` in `angler.js`) hold the rod by its grip. Casting is a two-handed back-cast that loads with the charge, a timed 0.28 s forward stroke past the target and a settle, with a body weight shift and shoulder drive. While reeling the off hand sits on the crank knob, which turns in a real circle beside the spinning reel. Relaxed open hands for creation, Milo's counter and his wave.
+- **Character creation is a scene.** Face / Hair tabs, eye colour, facial hair, six styles, “Surprise me”, a slow turntable camera that leans in on the face while face and hair are edited (drag to turn), rod set down and arms relaxed. The save sanitizer accepts `style` 0–5, `eyes` 0–4 and `facial` 0–3; older characters default to 0. Payload version is still 3.
+- **First person** now sits at eye height with the head hidden, pitched down, and angles the rod across the frame from the rod hand. On phones the lower controls cover part of the hands; the rod, reel top and line stay visible.
+- **Transitions.** Rippling start mark, a camera glide down from high over the water as the title appears, staggered title reveal, title copy fading out while the interface settles in, and a veil dip (`dip()` in `game.js`) for lake ↔ aquarium and travelling between waters. All of it respects reduced motion.
+- **Ultra graphics** (Options): full device resolution (up to 3×), 4096 shadow map with tighter penumbra, 2 s sky-reflection rebake, 300×250 water mesh, 4,200 grass blades, maximum anisotropic filtering. Tiers are one table (`PROFILES` in `scene.js`). Crisp also gets 4× anisotropy.
+- **LOD.** The lake/ocean mesh is graded: the same vertex budget, cells about 0.35 units round the angler and float, several units at the horizon (`waterGrid` in `environment.js`). Grass density follows the tier (900 / 1,800 / 2,600 / 4,200). Distant aquarium fish drop their pelvic fins except on Ultra.
+- **Transparency.** Transparent particle systems (spray, dust, bubbles, motes, rain) no longer write depth, so overlapping particles do not cut each other; the sky is still its own pass, so the sun, moon and stars can never draw over mountains.
+- **The market shows 3D models.** Rods, lines (spools), every bait on its hook, tanks, decor, the filter, boats, and island dioramas of each water render as thumbnails (`dist/items.js`, `itemThumbnail()` in `preview.js`). Apparel is shown worn by the player's own angler, framed on that part of the body. `tools/viewer.html?m=item:rod:3` shows any of them.
+- Build marker, module URLs and worker cache are **v8**.
 
 ## v1.5 “The Living Water” — what changed
 
@@ -87,7 +100,7 @@ The stationary angler fishes by tapping/holding. There is no character locomotio
 - Procedural sounds for cast swish, actual bobber water contact, bite/reel/tension, snapping/escape, splash/feed, pearls, UI, and dripping held fish. Occasional freshwater daytime birds/traffic or coastal gulls/horns. Sound pauses in the background and can be muted; Options includes volume presets. Do not claim the sounds have been listened to on hardware.
 - Startup: black screen asks for a tap to unlock mobile audio, then ocean ambience, “Created by ChatGPT and Devin Combs,” and a fade to a 3D shore camera looking toward a fisherman/boat. Title menu: Stillwater, Continue, Start new, Options, Extra. Start new asks before replacing an existing character save. Options includes export/import, audio/volume and graphics. Extra credits and future-mode notes. Help can return to the title.
 - Generated neutral detail texture maps on rod/grip, clothing, dock and boat wood; added line guides and bobber trim. This is targeted material improvement, **not completion of the request for high-quality art on every model**.
-- iPhone standalone/PWA metadata, icons, safe areas, offline shell, input-exempt selection/callout suppression and pointer-based casting. Versioned module URLs and worker cache currently **v7** (v1.5 models). Do not reuse v7 URLs for a later code change: update URLs, build marker, cache version, and offline tests together.
+- iPhone standalone/PWA metadata, icons, safe areas, offline shell, input-exempt selection/callout suppression and pointer-based casting. Versioned module URLs and worker cache currently **v8** (v1.6). Do not reuse v8 URLs for a later code change: update URLs, build marker, cache version, and offline tests together.
 
 ## Source map
 
@@ -97,17 +110,18 @@ The stationary angler fishes by tapping/holding. There is no character locomotio
 | `dist/economy.js` | Species, rarity colors, prices, purchases, growth, migration, rebirth |
 | `dist/fishing.js` | Conditions, encounters, rarity timing profile, fight progress/failure |
 | `dist/scene.js` | WebGL scene, cameras, aquarium, arrival/drop, halo, held-fish drips, orchestration |
-| `dist/angler.js` | Procedural character, outfit, arm/hand/rod poses |
+| `dist/angler.js` | Procedural character, hair/face/outfit, two-bone IK arms, cast/reel/rod poses |
 | `dist/tackle.js` | Rope, bobber/hook/bait, flight, surface impact, retrieval and hanging |
 | `dist/environment.js` | Water shader/height model, scenery, ambient actors, boats, shore title scene |
 | `dist/surface.js` | Pure damped tank wave solver and hull sampling helper |
 | `dist/textures.js` | Locally generated deterministic DataTexture material maps and cloud sprites |
-| `dist/models.js` | Procedural modelling toolkit (lathe, displace, tube, paint, merge) |
+| `dist/models.js` | Procedural modelling toolkit (lathe, loft, displace, tube, paint, merge, consolidate) |
+| `dist/items.js` | 3D market item models (rods, spools, baits, tanks, decor, filter, boats, water dioramas) |
 | `dist/scenery.js` | Trees, rocks, cottages, cars, walkers, palms, harbour blocks, gulls, dock, lantern, reeds |
 | `tools/viewer.html` | Dev-only model turntable (not deployed) |
 | `dist/fish.js`, `dist/swimming.js` | Fish mesh construction and limited-acceleration motion |
 | `dist/audio.js` | Web Audio synthesis, device voice, ambience scheduling, mute/pause |
-| `dist/preview.js`, `dist/art.js` | Resident rotatable model preview and illustrative fallback |
+| `dist/preview.js`, `dist/art.js` | Resident model preview, fish/item thumbnails, Milo's shop vignette, illustrative fallback |
 | `dist/style.css`, `dist/index.html` | Responsive UI, title, shop, touch constraints |
 | `dist/sw.js`, `dist/manifest.webmanifest` | Offline shell and home-screen installation |
 | `checks/*.test.mjs` | Eight Node regression files, no real-browser tests |

@@ -83,3 +83,12 @@ export function cloudTexture(seed = 1) {
   cache.set(key, t);
   return t;
 }
+
+// Sharper surface textures at grazing angles on the higher graphics settings.
+export function setAnisotropy(n) {
+  for (const t of cache.values()) {
+    if (t.anisotropy === n) continue;
+    t.anisotropy = n;
+    t.needsUpdate = true;
+  }
+}

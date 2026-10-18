@@ -32,6 +32,24 @@ export function bankHeight(x, z) {
 const IMPULSES = 16;
 // Coherent surface model. The GLSL and JS height functions are kept identical so the
 // float, boats and drips ride exactly the waves that are drawn.
+// Water LOD: the same vertex budget, graded so cells are about 0.35 units round the angler
+// (where the float, splashes and ripples are) and stretch to several units at the horizon.
+// Covers x -130..130 and z -180..50 like a flat plane would.
+function waterGrid(cols, rows) {
+  const g = new T.PlaneGeometry(1, 1, cols, rows),
+    p = g.attributes.position,
+    split = 0.22;
+  for (let i = 0; i < p.count; i++) {
+    const a = p.getX(i) * 2,
+      v = 0.5 + p.getY(i),
+      x = Math.sign(a) * 130 * Math.pow(Math.abs(a), 1.8),
+      z = v < split ? 8.8 + 41.2 * Math.pow((split - v) / split, 1.6) : 8.8 - 188.8 * Math.pow((v - split) / (1 - split), 1.8);
+    p.setXYZ(i, x, 0, z);
+  }
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}
 export function createWater(parent) {
   let ocean = 0,
     swell = 1,
@@ -101,10 +119,7 @@ export function createWater(parent) {
         if(biolume>.01){vec2 q=p.xz*3.;vec2 cell=floor(q);float h=fract(sin(dot(cell,vec2(41.3,289.1)))*43758.5);vec2 c=fract(q)-vec2(fract(h*7.3),fract(h*3.1))*.6-.2;float dot=smoothstep(.13,0.,length(c))*step(.92,h);float tw=.5+.5*sin(time*2.+h*40.);color+=vec3(.3,.8,1.)*dot*tw*biolume*1.6*(1.-smoothstep(8.,40.,dist));}
         float fog=1.-exp(-fogDensity*fogDensity*dist*dist);gl_FragColor=vec4(mix(color,fogColor,fog),1.);}`,
   });
-  const geo = new T.PlaneGeometry(260, 230, 192, 160);
-  geo.rotateX(-Math.PI / 2);
-  geo.translate(0, 0, -65);
-  const mesh = new T.Mesh(geo, mat);
+  const mesh = new T.Mesh(waterGrid(192, 160), mat);
   mesh.name = 'Lake water';
   parent.add(mesh);
   function height(x, z, t) {
@@ -128,6 +143,12 @@ export function createWater(parent) {
     mesh,
     height,
     uniforms,
+    setResolution(ultra) {
+      const cols = ultra ? 300 : 192;
+      if (mesh.geometry.parameters?.widthSegments === cols) return;
+      mesh.geometry.dispose();
+      mesh.geometry = waterGrid(cols, ultra ? 250 : 160);
+    },
     impulse(x, z, t, power = 0.22) {
       events.push({x, z, time: t, power});
       if (events.length > IMPULSES) events.shift();
@@ -182,6 +203,95 @@ export function updateSway(t, windy) {
   sway.time.value = t;
   sway.wind.value += ((windy ? 1.1 : 0.35) - sway.wind.value) * 0.01;
 }
+const BOX = new T.BoxGeometry(1, 1, 1),
+  CYL = new T.CylinderGeometry(1, 1, 1, 12);
+BOX.userData.shared = CYL.userData.shared = true;
+const bmat = (color, extra = {}) => new T.MeshStandardMaterial({color, roughness: 0.85, ...extra});
+function bmesh(g, m, p, sc, par) {
+  const o = new T.Mesh(g, m);
+  o.position.set(...p);
+  o.scale.set(...sc);
+  par.add(o);
+  return o;
+}
+// Lofted skiff hull: transom stern, rising sheer to a pointed bow, painted bottom and
+// a boot stripe at the waterline, with gunwales, floorboards and thwarts inside.
+const hullStations = 26,
+  hullRing = 16;
+function hullPoint(u, a) {
+  const beam = u < 0.62 ? 0.78 + 0.22 * Math.sin((u / 0.62) * Math.PI * 0.5) : Math.pow((1 - u) / 0.38, 0.75),
+    sheer = 0.62 + 0.3 * Math.pow(u, 3) - 0.04 * Math.sin(Math.PI * u),
+    keel = -0.45 + 0.22 * Math.pow(u, 4),
+    theta = a * Math.PI,
+    down = Math.pow(Math.sin(theta), 0.55);
+  return [(u - 0.5) * 4.1, sheer - (sheer - keel) * down, Math.cos(theta) * 0.92 * beam];
+}
+export function boatModel(size = 1, style = 0) {
+  const g = new T.Group(),
+    pos = [],
+    colors = [],
+    index = [],
+    paint = new T.Color(BOATS[style]?.color || '#b4a787'),
+    bottom = new T.Color('#2f4f52'),
+    stripe = new T.Color('#efe9d6');
+  for (let i = 0; i <= hullStations; i++) {
+    for (let j = 0; j <= hullRing; j++) {
+      const p = hullPoint(i / hullStations, j / hullRing);
+      pos.push(...p);
+      const c = p[1] < -0.2 ? bottom : p[1] < -0.12 ? stripe : paint;
+      colors.push(c.r, c.g, c.b);
+    }
+    if (i < hullStations)
+      for (let j = 0; j < hullRing; j++) {
+        const a = i * (hullRing + 1) + j,
+          b = a + hullRing + 1;
+        index.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+  }
+  // Transom: close the stern with a flat fan.
+  const centre = pos.length / 3;
+  pos.push(-2.05, 0.1, 0);
+  colors.push(paint.r * 0.85, paint.g * 0.85, paint.b * 0.85);
+  for (let j = 0; j < hullRing; j++) index.push(centre, j, j + 1);
+  const geo = new T.BufferGeometry();
+  geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  const hull = bmesh(geo, bmat('#ffffff', {vertexColors: true, roughness: 0.55, side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], g);
+  hull.name = 'Hull';
+  const woodLight = bmat('#b39f7b', {map: surfaceTexture('wood')}),
+    woodDark = bmat('#7e6849', {map: surfaceTexture('wood')});
+  for (const sideSign of [-1, 1]) {
+    const rail = [];
+    for (let i = 0; i <= hullStations; i++) {
+      const p = hullPoint(i / hullStations, sideSign < 0 ? 0 : 1);
+      rail.push(new T.Vector3(p[0], p[1] + 0.02, p[2]));
+    }
+    bmesh(new T.TubeGeometry(new T.CatmullRomCurve3(rail), 40, 0.045, 6, false), woodDark, [0, 0, 0], [1, 1, 1], g);
+  }
+  bmesh(BOX, woodLight, [-0.15, 0.22, 0], [3.1, 0.06, 1.25], g);
+  for (let k = -3; k <= 3; k++) bmesh(BOX, woodDark, [-0.15, 0.255, k * 0.17], [3.05, 0.012, 0.02], g);
+  for (const x of [-1.15, 0.95]) bmesh(BOX, woodDark, [x, 0.42, 0], [0.34, 0.07, 1.62 - Math.abs(x) * 0.18], g);
+  bmesh(BOX, woodDark, [1.95, 0.85, 0], [0.12, 0.08, 0.08], g);
+  if (style > 0) {
+    bmesh(BOX, bmat('#e0dccc'), [-1.3, 0.8, 0], [1.1, 1.3, 1.05], g);
+    bmesh(BOX, bmat('#8fadaf', {metalness: 0.3, roughness: 0.15}), [-1.3, 1.1, 0.54], [0.8, 0.55, 0.03], g);
+    bmesh(BOX, bmat('#bdc9bd'), [-1.3, 1.53, 0], [1.45, 0.12, 1.5], g);
+  }
+  if (style === 2) {
+    bmesh(CYL, bmat('#bfcabc', {metalness: 0.6}), [-1.3, 2.05, 0], [0.035, 1.05, 0.035], g);
+    bmesh(BOX, bmat('#bac9c5'), [-1.3, 2.58, 0], [0.65, 0.08, 0.4], g);
+    for (const side of [-1, 1]) {
+      for (const x of [-1.5, -0.6, 0.6, 1.5])
+        bmesh(CYL, bmat('#bdc9bb', {metalness: 0.6}), [x, 0.5, side * 0.74], [0.025, 0.65, 0.025], g);
+      bmesh(BOX, bmat('#bfcbbb', {metalness: 0.55}), [0, 0.82, side * 0.74], [3.3, 0.035, 0.035], g);
+    }
+  }
+  g.scale.setScalar(size);
+  return g;
+}
+const GRASS_MAX = 4200;
 export function createEnvironment(parent, state, water) {
   const fresh = new T.Group(),
     salt = new T.Group(),
@@ -257,9 +367,9 @@ export function createEnvironment(parent, state, water) {
   });
   const grassGeo = new T.PlaneGeometry(0.09, 0.8, 1, 3);
   grassGeo.translate(0, 0.4, 0);
-  const grass = new T.InstancedMesh(grassGeo, addSway(mat('#80916a', {side: T.DoubleSide}), 0.16), 1800);
+  const grass = new T.InstancedMesh(grassGeo, addSway(mat('#80916a', {side: T.DoubleSide}), 0.16), GRASS_MAX);
   fresh.add(grass);
-  for (let i = 0; i < 1800; i++) {
+  for (let i = 0; i < GRASS_MAX; i++) {
     const side = i % 2 ? -1 : 1;
     matrix.position.set(side * (11.3 + Math.random() * 15), 1, -30 + Math.random() * 48);
     const xx = matrix.position.x - (side < 0 ? -23 : 27),
@@ -392,83 +502,7 @@ export function createEnvironment(parent, state, water) {
     b.position.set(-35 + i * 3.3, 1, -79 - (i % 3) * 3);
     harbor.add(b);
   }
-  // Lofted skiff hull: transom stern, rising sheer to a pointed bow, painted bottom and
-  // a boot stripe at the waterline, with gunwales, floorboards and thwarts inside.
-  const hullStations = 26,
-    hullRing = 16;
-  function hullPoint(u, a) {
-    const beam = u < 0.62 ? 0.78 + 0.22 * Math.sin((u / 0.62) * Math.PI * 0.5) : Math.pow((1 - u) / 0.38, 0.75),
-      sheer = 0.62 + 0.3 * Math.pow(u, 3) - 0.04 * Math.sin(Math.PI * u),
-      keel = -0.45 + 0.22 * Math.pow(u, 4),
-      theta = a * Math.PI,
-      down = Math.pow(Math.sin(theta), 0.55);
-    return [(u - 0.5) * 4.1, sheer - (sheer - keel) * down, Math.cos(theta) * 0.92 * beam];
-  }
-  function boat(size = 1, style = 0) {
-    const g = new T.Group(),
-      pos = [],
-      colors = [],
-      index = [],
-      paint = new T.Color(BOATS[style]?.color || '#b4a787'),
-      bottom = new T.Color('#2f4f52'),
-      stripe = new T.Color('#efe9d6');
-    for (let i = 0; i <= hullStations; i++) {
-      for (let j = 0; j <= hullRing; j++) {
-        const p = hullPoint(i / hullStations, j / hullRing);
-        pos.push(...p);
-        const c = p[1] < -0.2 ? bottom : p[1] < -0.12 ? stripe : paint;
-        colors.push(c.r, c.g, c.b);
-      }
-      if (i < hullStations)
-        for (let j = 0; j < hullRing; j++) {
-          const a = i * (hullRing + 1) + j,
-            b = a + hullRing + 1;
-          index.push(a, b, a + 1, b, b + 1, a + 1);
-        }
-    }
-    // Transom: close the stern with a flat fan.
-    const centre = pos.length / 3;
-    pos.push(-2.05, 0.1, 0);
-    colors.push(paint.r * 0.85, paint.g * 0.85, paint.b * 0.85);
-    for (let j = 0; j < hullRing; j++) index.push(centre, j, j + 1);
-    const geo = new T.BufferGeometry();
-    geo.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
-    geo.setAttribute('color', new T.Float32BufferAttribute(colors, 3));
-    geo.setIndex(index);
-    geo.computeVertexNormals();
-    const hull = mesh(geo, mat('#ffffff', {vertexColors: true, roughness: 0.55, side: T.DoubleSide}), [0, 0, 0], [1, 1, 1], g);
-    hull.name = 'Hull';
-    const woodLight = mat('#b39f7b', {map: surfaceTexture('wood')}),
-      woodDark = mat('#7e6849', {map: surfaceTexture('wood')});
-    for (const sideSign of [-1, 1]) {
-      const rail = [];
-      for (let i = 0; i <= hullStations; i++) {
-        const p = hullPoint(i / hullStations, sideSign < 0 ? 0 : 1);
-        rail.push(new T.Vector3(p[0], p[1] + 0.02, p[2]));
-      }
-      mesh(new T.TubeGeometry(new T.CatmullRomCurve3(rail), 40, 0.045, 6, false), woodDark, [0, 0, 0], [1, 1, 1], g);
-    }
-    mesh(box, woodLight, [-0.15, 0.22, 0], [3.1, 0.06, 1.25], g);
-    for (let k = -3; k <= 3; k++) mesh(box, woodDark, [-0.15, 0.255, k * 0.17], [3.05, 0.012, 0.02], g);
-    for (const x of [-1.15, 0.95]) mesh(box, woodDark, [x, 0.42, 0], [0.34, 0.07, 1.62 - Math.abs(x) * 0.18], g);
-    mesh(box, woodDark, [1.95, 0.85, 0], [0.12, 0.08, 0.08], g);
-    if (style > 0) {
-      mesh(box, mat('#e0dccc'), [-1.3, 0.8, 0], [1.1, 1.3, 1.05], g);
-      mesh(box, mat('#8fadaf', {metalness: 0.3, roughness: 0.15}), [-1.3, 1.1, 0.54], [0.8, 0.55, 0.03], g);
-      mesh(box, mat('#bdc9bd'), [-1.3, 1.53, 0], [1.45, 0.12, 1.5], g);
-    }
-    if (style === 2) {
-      mesh(cyl, mat('#bfcabc', {metalness: 0.6}), [-1.3, 2.05, 0], [0.035, 1.05, 0.035], g);
-      mesh(box, mat('#bac9c5'), [-1.3, 2.58, 0], [0.65, 0.08, 0.4], g);
-      for (const side of [-1, 1]) {
-        for (const x of [-1.5, -0.6, 0.6, 1.5])
-          mesh(cyl, mat('#bdc9bb', {metalness: 0.6}), [x, 0.5, side * 0.74], [0.025, 0.65, 0.025], g);
-        mesh(box, mat('#bfcbbb', {metalness: 0.55}), [0, 0.82, side * 0.74], [3.3, 0.035, 0.035], g);
-      }
-    }
-    g.scale.setScalar(size);
-    return g;
-  }
+  const boat = boatModel;
   const fleet = [],
     sailors = [];
   for (let i = 0; i < 5; i++) {
@@ -570,7 +604,7 @@ export function createEnvironment(parent, state, water) {
   rainGeo.setAttribute('position', new T.Float32BufferAttribute(rainPos, 3));
   const rain = new T.Points(
     rainGeo,
-    new T.PointsMaterial({color: '#b4cbd0', size: 0.035, transparent: true, opacity: 0.5}),
+    new T.PointsMaterial({color: '#b4cbd0', size: 0.035, transparent: true, depthWrite: false, opacity: 0.5}),
   );
   common.add(rain);
   rain.visible = false;
@@ -584,6 +618,11 @@ export function createEnvironment(parent, state, water) {
     birds.push(bird);
   }
   return {
+    // Grass density follows the graphics setting; placements are random, so any prefix of
+    // the instances is an even scatter.
+    setDetail(quality) {
+      grass.count = {battery: 900, balanced: 1800, crisp: 2600, ultra: GRASS_MAX}[quality] || 1800;
+    },
     update(dt, t, region, c) {
       updateSway(t, c.weather === 'wind');
       currentRegion = region;

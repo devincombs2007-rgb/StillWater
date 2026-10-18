@@ -4,7 +4,7 @@ import {makeSwimmer, stepSwimmer} from './swimming.js?v=8';
 import {createWater, createEnvironment, addSway} from './environment.js?v=8';
 import {createAngler} from './angler.js?v=8';
 import {createTackle} from './tackle.js?v=8';
-import {surfaceTexture, cloudTexture} from './textures.js?v=8';
+import {surfaceTexture, cloudTexture, setAnisotropy} from './textures.js?v=8';
 import {rockGeometry, dockGeometry, lantern, reedGeometry} from './scenery.js?v=8';
 import {place, merge, fbm, paint, tube, displace, lathe} from './models.js?v=8';
 import {createTankSurface} from './surface.js?v=8';
@@ -38,6 +38,15 @@ function skyAt(cycle, region, out) {
   if (region === 2) out[0].multiplyScalar(0.7), out[1].multiplyScalar(0.8);
   return out;
 }
+// Graphics tiers. Ultra renders at full device resolution with 4K shadows, a finer water
+// mesh, denser grass, anisotropic textures and faster sky reflections.
+const PROFILES = {
+  battery: {ratio: 1, shadow: 0, fps: 30, env: 60},
+  balanced: {ratio: 1.5, shadow: 1024, fps: 45, env: 4},
+  crisp: {ratio: 2, shadow: 2048, fps: 60, env: 4},
+  ultra: {ratio: 3, shadow: 4096, fps: 60, env: 2},
+};
+const profile = state => PROFILES[state.quality] || PROFILES.balanced;
 export function createWorld(canvas, state, onError) {
   let renderer;
   try {
@@ -51,15 +60,13 @@ export function createWorld(canvas, state, onError) {
     onError(e);
     return null;
   }
-  renderer.setPixelRatio(
-    Math.min(devicePixelRatio, state.quality === 'battery' ? 1 : state.quality === 'crisp' ? 2 : 1.5),
-  );
+  renderer.setPixelRatio(Math.min(devicePixelRatio, profile(state).ratio));
   renderer.setSize(innerWidth, innerHeight);
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
   // Soft sun shadows ground everything near the angler (and in the tank). Off on Battery.
-  renderer.shadowMap.enabled = state.quality !== 'battery';
+  renderer.shadowMap.enabled = profile(state).shadow > 0;
   renderer.shadowMap.type = T.PCFSoftShadowMap;
   const shade = (obj, cast = true, receive = false) => {
     obj.traverse(o => {
@@ -92,7 +99,7 @@ export function createWorld(canvas, state, onError) {
   scene.add(hemi);
   const sun = new T.DirectionalLight('#ffdfb8', 2.1);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(state.quality === 'crisp' ? 2048 : 1024, state.quality === 'crisp' ? 2048 : 1024);
+  sun.shadow.mapSize.setScalar(profile(state).shadow || 1024);
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.03;
   sun.shadow.radius = 3;
@@ -160,7 +167,7 @@ export function createWorld(canvas, state, onError) {
   starGeo.setAttribute('position', new T.Float32BufferAttribute(starPos, 3));
   const stars = new T.Points(
     starGeo,
-    new T.PointsMaterial({color: '#fff0ce', size: 0.27, transparent: true, opacity: 0.7, sizeAttenuation: true}),
+    new T.PointsMaterial({color: '#fff0ce', size: 0.27, transparent: true, depthWrite: false, opacity: 0.7, sizeAttenuation: true}),
   );
   skyScene.add(stars);
   // A loose ring of drifting clouds, lit by the same sky palette as everything else.
@@ -440,7 +447,7 @@ export function createWorld(canvas, state, onError) {
   const glass = mesh(new T.BoxGeometry(9.3, 4.9, 5.3), glassMat, tank, [0, 2.57, 0]);
   const edges = new T.LineSegments(
     new T.EdgesGeometry(glass.geometry),
-    new T.LineBasicMaterial({color: '#a3cebd', transparent: true, opacity: 0.4}),
+    new T.LineBasicMaterial({color: '#a3cebd', transparent: true, depthWrite: false, opacity: 0.4}),
   );
   edges.position.copy(glass.position);
   tank.add(edges);
@@ -723,7 +730,7 @@ export function createWorld(canvas, state, onError) {
   bubblesGeo.setAttribute('position', new T.Float32BufferAttribute(bubbleCoords, 3));
   const bubbles = new T.Points(
     bubblesGeo,
-    new T.PointsMaterial({color: '#c6eade', size: 0.035, transparent: true, opacity: 0.55}),
+    new T.PointsMaterial({color: '#c6eade', size: 0.035, transparent: true, depthWrite: false, opacity: 0.55}),
   );
   tank.add(bubbles);
   const firePos = [];
@@ -733,7 +740,7 @@ export function createWorld(canvas, state, onError) {
   fireGeo.setAttribute('position', new T.Float32BufferAttribute(firePos, 3));
   const fireflies = new T.Points(
     fireGeo,
-    new T.PointsMaterial({color: '#f6dca4', size: 0.045, transparent: true, opacity: 0.6}),
+    new T.PointsMaterial({color: '#f6dca4', size: 0.045, transparent: true, depthWrite: false, opacity: 0.6}),
   );
   lake.add(fireflies);
   const fishGroup = new T.Group();
@@ -809,7 +816,7 @@ export function createWorld(canvas, state, onError) {
   dripGeo.setAttribute('position', new T.Float32BufferAttribute(dripPosition, 3));
   const drips = new T.Points(
     dripGeo,
-    new T.PointsMaterial({color: '#d5e7dd', transparent: true, opacity: 0.7, size: 0.028}),
+    new T.PointsMaterial({color: '#d5e7dd', transparent: true, depthWrite: false, opacity: 0.7, size: 0.028}),
   );
   lake.add(drips);
   let dripSpawn = 0,
@@ -831,7 +838,7 @@ export function createWorld(canvas, state, onError) {
   pelletGeo.setAttribute('position', new T.Float32BufferAttribute(pelletCoords, 3));
   const pellets = new T.Points(
     pelletGeo,
-    new T.PointsMaterial({color: '#e7c384', size: 0.065, transparent: true, opacity: 0.85}),
+    new T.PointsMaterial({color: '#e7c384', size: 0.065, transparent: true, depthWrite: false, opacity: 0.85}),
   );
   tank.add(pellets);
   pellets.visible = false;
@@ -1008,7 +1015,7 @@ export function createWorld(canvas, state, onError) {
   splashGeo.setAttribute('position', new T.Float32BufferAttribute(splashData, 3));
   const splash = new T.Points(
     splashGeo,
-    new T.PointsMaterial({color: '#d3e9d8', size: 0.055, transparent: true, opacity: 0.8}),
+    new T.PointsMaterial({color: '#d3e9d8', size: 0.055, transparent: true, depthWrite: false, opacity: 0.8}),
   );
   tank.add(splash);
   splash.visible = false;
@@ -1034,10 +1041,32 @@ export function createWorld(canvas, state, onError) {
       s.motion.decision = 0;
     }
   }
+  function applyQuality() {
+    const q = profile(state),
+      shadows = q.shadow > 0;
+    if (renderer.shadowMap.enabled !== shadows) {
+      renderer.shadowMap.enabled = shadows;
+      scene.traverse(o => {
+        if (o.material) for (const m of [o.material].flat()) m.needsUpdate = true;
+      });
+    }
+    if (shadows && sun.shadow.mapSize.x !== q.shadow) {
+      sun.shadow.mapSize.setScalar(q.shadow);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null;
+    }
+    sun.shadow.radius = state.quality === 'ultra' ? 2 : 3;
+    renderer.setPixelRatio(Math.min(devicePixelRatio, q.ratio));
+    renderer.setSize(innerWidth, innerHeight);
+    waterSystem.setResolution?.(state.quality === 'ultra');
+    surroundings.setDetail?.(state.quality);
+    setAnisotropy(state.quality === 'ultra' ? renderer.capabilities?.getMaxAnisotropy?.() || 1 : state.quality === 'crisp' ? 4 : 1);
+  }
+  applyQuality();
   function frame(ms) {
     requestAnimationFrame(frame);
     if (document.hidden) return;
-    const fps = state.quality === 'battery' ? 30 : state.quality === 'crisp' ? 60 : 45,
+    const fps = profile(state).fps,
       interval = 1000 / fps;
     if (ms - lastRender < interval - 0.1) return;
     lastRender = ms - ((ms - lastRender) % interval);
@@ -1338,6 +1367,9 @@ export function createWorld(canvas, state, onError) {
         if (m.p.y > 3.95 && Math.random() < dt * 1.2)
           tankSurface.impulse(m.p.x, m.p.z, 0.05 + Math.hypot(m.v.x, m.v.z) * 0.08, 0.22);
         animateFish(s.mesh, m.tail, 0.7 + Math.hypot(m.v.x, m.v.z) * 0.7);
+        // Level of detail: distant fish drop their smallest fins (never on Ultra).
+        const near = state.quality === 'ultra' || camera.position.distanceTo(s.mesh.position) < 26;
+        for (const part of s.mesh.userData.lodParts || []) part.visible = near;
       }
       selectedRing.visible = false;
       const selected = swimmers.find(s => s.uid === selectedUID);
@@ -1392,7 +1424,7 @@ export function createWorld(canvas, state, onError) {
     skyLake.visible = view === 'lake';
     // Image-based lighting: every few seconds the live sky is baked into an environment
     // map, so metal, glass and wet surfaces reflect the actual sky and time of day.
-    if (pmrem && clock - envBaked > (state.quality === 'battery' ? 60 : 4)) {
+    if (pmrem && clock - envBaked > profile(state).env) {
       envBaked = clock;
       const target = pmrem.fromScene(skyScene, 0, 0.1, 400);
       envTarget?.dispose();
@@ -1463,19 +1495,7 @@ export function createWorld(canvas, state, onError) {
       conditions = worldConditions(Date.now(), region);
       applyPalette();
     },
-    setQuality: () => {
-      const shadows = state.quality !== 'battery';
-      if (renderer.shadowMap.enabled !== shadows) {
-        renderer.shadowMap.enabled = shadows;
-        scene.traverse(o => {
-          if (o.material) for (const m of [o.material].flat()) m.needsUpdate = true;
-        });
-      }
-      renderer.setPixelRatio(
-        Math.min(devicePixelRatio, state.quality === 'battery' ? 1 : state.quality === 'crisp' ? 2 : 1.5),
-      );
-      renderer.setSize(innerWidth, innerHeight);
-    },
+    setQuality: applyQuality,
     setConditions: c => {
       if (!titleMode) conditions = c;
     },
