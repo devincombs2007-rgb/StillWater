@@ -755,6 +755,8 @@ export function createWorld(canvas, state, onError) {
     lakeRadius = 7.2,
     lookAhead = 5,
     lineLost = false,
+    releasing = false,
+    tossed = null,
     catchTwist = 0,
     heldFish = null,
     fightTension = 0,
@@ -1078,6 +1080,23 @@ export function createWorld(canvas, state, onError) {
       cameraLook.lerp(target, 1 - Math.exp(-dt * 3.6));
       camera.lookAt(cameraLook);
       lakeLife(dt);
+      if (tossed) {
+        const f = tossed.fish;
+        tossed.v.y -= 9.8 * dt;
+        f.position.addScaledVector(tossed.v, dt);
+        tossed.spin += dt * 6;
+        f.rotation.set(0, 0.5, Math.PI / 2 + tossed.spin);
+        animateFish(f, clock * 12, 1.4);
+        if (f.position.y < waterSystem.height(f.position.x, f.position.z, clock)) {
+          waterSystem.impulse(f.position.x, f.position.z, clock, 0.26);
+          sprayAt(f.position.x, waterSystem.height(f.position.x, f.position.z, clock), f.position.z, 18, 0.7);
+          soundCallback('splash');
+          lake.remove(f);
+          disposeFish(f);
+          tossed = null;
+        }
+      }
+      tackle.setCurrent?.(region === 1 ? 0.35 : 0);
       if (castState === 'reeling') tackle.fight(fightTension);
       tackle.update(dt, clock, angler.tip, camera);
       // Keep the float away from the face while the player designs their angler.
@@ -1360,9 +1379,16 @@ export function createWorld(canvas, state, onError) {
         lineLost = false;
         fightTension = 0;
         if (heldFish) {
-          lake.remove(heldFish);
-          disposeFish(heldFish);
+          // Released (or kept): the fish leaves the hook. A release is tossed back into the
+          // lake in an arc and splashes; a keeper simply goes to the aquarium.
+          if (releasing) {
+            tossed = {fish: heldFish, v: new T.Vector3(0.2, 2.2, -2.6), spin: 0};
+          } else {
+            lake.remove(heldFish);
+            disposeFish(heldFish);
+          }
           heldFish = null;
+          releasing = false;
           rarityHalo.visible = false;
           drips.visible = false;
         }
@@ -1411,10 +1437,19 @@ export function createWorld(canvas, state, onError) {
     setTension: n => {
       fightTension = n;
     },
+    releaseCatch: () => {
+      releasing = true;
+    },
     loseLine: () => {
       lineLost = true;
     },
     showCatch: fish => {
+      // The fish breaks the surface where the float was.
+      const ex = tackle.end.x,
+        ez = tackle.end.z;
+      waterSystem.impulse(ex, ez, clock, 0.3);
+      sprayAt(ex, waterSystem.height(ex, ez, clock), ez, 22, 0.9);
+      soundCallback('thrash');
       if (heldFish) {
         lake.remove(heldFish);
         disposeFish(heldFish);

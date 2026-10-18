@@ -26,7 +26,8 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
     fishSeed = Math.random() * 10,
     splashWait = 0,
     spin = 0,
-    respawn = 0;
+    respawn = 0,
+    current = 0;
   // Ribbon line: two vertices per rope point, widened toward the camera each frame.
   const lineGeo = new T.BufferGeometry(),
     linePos = new Float32Array(n * 2 * 3),
@@ -231,6 +232,7 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
         depth = target - end.y;
       velocity.y += (depth * (depth > 0 ? 95 : 60) - velocity.y * (depth > 0 ? 9 : 5)) * dt;
       if (end.y > water + 0.4) velocity.y -= 9.81 * dt;
+      velocity.z += current * 1.6 * dt;
       velocity.x *= Math.exp(-2.2 * dt);
       velocity.z *= Math.exp(-2.2 * dt);
       ropeLength = Math.max(1.6, ropeLength - winch * dt * 2);
@@ -344,6 +346,10 @@ export function createTackle(parent, waterHeight, onImpact = () => {}) {
         splashWait = 0.2;
         velocity.y -= 1.4;
       }
+    },
+    // A steady river current (m/s along +z, downstream toward the angler) drifts the float.
+    setCurrent(speed = 0) {
+      current = speed;
     },
     fight(strength = 0) {
       fishPull = Math.max(0, Math.min(1, strength));

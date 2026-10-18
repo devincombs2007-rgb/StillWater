@@ -349,7 +349,10 @@ function finishCatch(keep) {
   pending = null;
   delete state.pending;
   closePanel(true);
-  if (!keep) setStage('idle');
+  if (!keep) {
+    world?.releaseCatch?.();
+    setStage('idle');
+  }
   save();
   hud();
   if (keep) {

@@ -56,6 +56,8 @@ Measured in headless Chromium at 390×844 (instrumented WebGL calls): lake ≈19
 - **Aquarium room:** plank floor, braided rug, inward-facing walls (they disappear when the orbit camera passes them), bookshelf, fern, lamp, and a window whose glass shows the real outdoor sky, sun, stars, hills and lake for the current region and hour.
 - **UI uses the 3D models:** journal and resident cards swap their drawings for renders of each species' real 3D model (silhouettes when undiscovered). Milo is now a live 3D shopkeeper (the angler rig with apron, cap and mustache) behind a counter with bait jars, a bell and a rod rack; he waves when you enter. The SVG portrait stays as a fallback.
 - **Regions:** Harbor Reach has the town, Sunbreak Reef a palm island, coral heads and turquoise shoals, the Open Blue only horizon and deep water.
+- **Freshwater regions:** Willow Lake lily pads that ride the waves; Fernwater Creek current streaks that also drift the float; Starlit Cove bioluminescent specks that brighten at night.
+- **Moments connect:** a hooked fish splashes as it is lifted out; a released fish is tossed back into the lake and splashes instead of vanishing.
 - `models.consolidate()` merges rigid meshes per parent/material (the angler went from ~125 to 78 meshes).
 
 Measured at 390×844 in headless Chromium: lake ≈230 draw calls with shadows (v1.5 base 184), aquarium ≈328 (was 389). Shadows and the extra renders are untested on iPhone hardware; if the phone runs hot, Battery mode removes shadows and heavy water detail.
